@@ -1,5 +1,7 @@
 # ShieldDB - Job Scam Intelligence Dashboard
 
+**Live Demo:** [https://job-scam-detection-dashboard.vercel.app](https://job-scam-detection-dashboard.vercel.app)
+
 ShieldDB is a sophisticated, full-stack Job Aggregation and Cyber-Threat Intelligence platform designed to automatically scrape, evaluate, and flag fraudulent job listings. It acts as an autonomous defense mechanism for job seekers against employment scams.
 
 ## 🚀 Features
