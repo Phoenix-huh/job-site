@@ -59,9 +59,32 @@ python daily_scrape.py --roles "Data Analyst,Software Engineer" --max 10
 ```
 *Note: Make sure your `.env` is configured properly. If `DATABASE_URL` is configured, it will push directly to your remote staging database.*
 
-## 🌍 Production Deployment
-The infrastructure is strictly configured for instant remote deploy.
-- **Next.js Frontend**: Hosted flawlessly on [Vercel](https://vercel.com).
-- **FastAPI Backend**: Native support for [Render](https://render.com) Web Services.
+## 🗄️ Database Setup & Remote Sync
 
-Make sure to map the Vercel strictly to the `frontend/` Root Directory, and define `NEXT_PUBLIC_API_URL` leading to your deployed Render instance.
+ShieldDB dynamically handles both localized and cloud-hosted operations seamlessly using SQLAlchemy.
+
+### Setting up the Cloud Database
+By default, the backend generates a local SQLite file (`sql_app.db`). To persist data efficiently on a cloud environment like Render, you must configure a PostgreSQL database:
+1. Spin up a Free PostgreSQL instance on Render.
+2. Formulate a `.env` file inside the `backend/` directory on your local machine:
+   ```env
+   DATABASE_URL=postgresql://your-render-external-url-here
+   ```
+3. Run the local `daily_scrape.py` script. Your local browser will open and physically scrape Naukri, but the data will be securely pushed directly over the public internet into your live cloud database!
+
+*Alternatively, if you cannot use the scraper locally, you can populate a fresh database instantly by navigating to `https://<YOUR-RENDER-URL>/api/seed` in your browser. This triggers an internal API backdoor that wipes the active database and injects exactly three validated Job samples to test the Threat Engine.*
+
+## 🌍 Production Deployment
+The infrastructure is strictly configured for instant remote deployment directly from your GitHub repository.
+
+### Deploying the Backend (Render)
+Establish these parameters when creating the overarching Web Service:
+- **Root Directory:** `./backend`
+- **Build Command:** `pip install -r requirements.txt && playwright install chromium`
+- **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
+*Be sure to add your `DATABASE_URL` environment variable under Advanced Settings to securely hook the interface to the PostgreSQL database.*
+
+### Deploying the Frontend (Vercel)
+- Import the repository directly on the Vercel Dashboard.
+- **Root Directory:** `./frontend`
+- **Environment Variable:** Add `NEXT_PUBLIC_API_URL` and set it equal to the live HTTPS URL of your Render backend.
