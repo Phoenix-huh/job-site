@@ -2,10 +2,10 @@
 
 import { useRef, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Octahedron, Sphere } from "@react-three/drei";
+import { Environment, MeshTransmissionMaterial, TorusKnot } from "@react-three/drei";
 import * as THREE from "three";
 
-function SpinningHeroShield() {
+function SpinningGlassKnot() {
   const groupRef = useRef();
 
   useFrame((state, delta) => {
@@ -17,19 +17,25 @@ function SpinningHeroShield() {
     const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
     const progress = Math.max(0, Math.min(1, scrollY / maxScroll));
 
-    // Spin exactly 2 full rotations as the user reaches the bottom
+    // Spin smoothly across the entire page scroll (two full spins)
     const targetRotationY = progress * Math.PI * 4;
     groupRef.current.rotation.y = THREE.MathUtils.lerp(
       groupRef.current.rotation.y,
       targetRotationY,
       0.1
     );
+    
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(
+      groupRef.current.rotation.x,
+      progress * Math.PI,
+      0.05
+    );
 
-    // Add a very subtle organic floating "bob" independent of scroll
+    // Subtle floating bob
     const time = state.clock.getElapsedTime();
     const bobOffset = Math.sin(time) * 0.2;
 
-    // Shift left and right gracefully as the user scrolls
+    // Gentle swoop side to side
     const targetOffsetX = Math.sin(progress * Math.PI * 2) * 1.5;
     
     groupRef.current.position.y = THREE.MathUtils.lerp(
@@ -45,27 +51,23 @@ function SpinningHeroShield() {
   });
 
   return (
-    <group ref={groupRef} scale={3}>
-      {/* Core crystalline shield shape */}
-      <Octahedron args={[1, 0]}>
-        <meshStandardMaterial color="#10b981" roughness={0.1} metalness={0.9} />
-      </Octahedron>
-      
-      {/* Glowing inner core */}
-      <Sphere args={[0.5, 32, 32]}>
-        <meshStandardMaterial color="#6ee7b7" emissive="#10b981" emissiveIntensity={2} />
-      </Sphere>
-
-      {/* Outer metallic orbital forcefield rings */}
-      <mesh rotation-x={Math.PI / 2}>
-         <torusGeometry args={[1.6, 0.04, 16, 100]} />
-         <meshStandardMaterial color="#3b82f6" metalness={1} roughness={0.2} emissive="#3b82f6" emissiveIntensity={0.5} />
-      </mesh>
-      
-      <mesh rotation-x={Math.PI / 2} rotation-y={Math.PI / 4} scale={1.2}>
-         <torusGeometry args={[1.6, 0.02, 16, 100]} />
-         <meshStandardMaterial color="#E86352" metalness={1} roughness={0.2} emissive="#E86352" emissiveIntensity={0.5} />
-      </mesh>
+    <group ref={groupRef} scale={1.8}>
+      <TorusKnot args={[1, 0.35, 128, 64]}>
+        <MeshTransmissionMaterial 
+          samples={16} // Quality
+          resolution={512} // internal rendering res
+          transmission={1} // High transparency
+          roughness={0.05} // Crystal smooth
+          thickness={0.5} // Light refraction depth
+          ior={1.3} // Index of Refraction (glass/water like)
+          chromaticAberration={0.06} // Split RGB lightly at edges
+          anisotropy={0.1}
+          distortion={0.1}
+          distortionScale={0.3}
+          temporalDistortion={0.1}
+          color="#ffffff" // completely pure glass, inherits colors around it perfectly
+        />
+      </TorusKnot>
     </group>
   );
 }
@@ -82,20 +84,17 @@ export default function HeroShield3D() {
       width: '100vw',
       height: '100vh',
       zIndex: 50,
-      pointerEvents: 'none', // Critical to allow clicking underneath
+      pointerEvents: 'none',
       background: 'transparent'
     }}>
-      {/* Adding pointerEvents string directly to canvas container ensures R3F doesn't block */}
       <Canvas 
-        camera={{ position: [0, 0, 10], fov: 50 }} 
+        camera={{ position: [0, 0, 8], fov: 45 }} 
         gl={{ alpha: true, antialias: true }}
         style={{ pointerEvents: 'none' }}
       >
-        <ambientLight intensity={0.8} />
-        <directionalLight position={[10, 10, 5]} intensity={2} color="#ffffff" />
-        <directionalLight position={[-10, -10, -5]} intensity={1} color="#E86352" />
-        
-        <SpinningHeroShield />
+        {/* We use an Environment mapping for incredibly realistic lighting reflections on the glass. No harsh 'orange spots'. */}
+        <Environment preset="city" />
+        <SpinningGlassKnot />
       </Canvas>
     </div>
   );
