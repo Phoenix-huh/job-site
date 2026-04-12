@@ -1,5 +1,5 @@
 import "./globals.css";
-import HeroShield3D from "./components/HeroShield3D";
+import SideParallax3D from "./components/SideParallax3D";
 
 export const metadata = {
   title: "ShieldDB — Job Scam Intelligence",
@@ -14,7 +14,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <HeroShield3D />
+        <SideParallax3D />
         {children}
       </body>
     </html>
