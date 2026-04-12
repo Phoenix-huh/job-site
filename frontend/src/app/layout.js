@@ -1,5 +1,5 @@
 import "./globals.css";
-import CinematicParallax from "./components/CinematicParallax";
+import GiganticParallax from "./components/GiganticParallax";
 
 export const metadata = {
   title: "ShieldDB — Job Scam Intelligence",
@@ -14,7 +14,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <CinematicParallax />
+        <GiganticParallax />
         {children}
       </body>
     </html>

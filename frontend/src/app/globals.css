@@ -170,7 +170,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--coral);
+  background: transparent;
   overflow: hidden;
   cursor: default;
   transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
@@ -290,9 +290,9 @@ body {
   align-items: center;
   justify-content: center;
 }
-.section--cream { background: var(--cream); }
-.section--coral { background: var(--coral); }
-.section--dark { background: var(--dark); color: var(--cream); }
+.section--cream { background: transparent; color: var(--text-dark); }
+.section--coral { background: transparent; color: var(--text-dark); }
+.section--dark { background: transparent; color: var(--cream); }
 
 .section-inner {
   max-width: 1200px;
@@ -441,7 +441,7 @@ body {
 .dial-container {
   position: relative;
   height: 300vh; /* Scroll space for the dial to turn */
-  background: var(--cream);
+  background: transparent;
 }
 .dial-sticky {
   position: sticky;
@@ -451,7 +451,7 @@ body {
   align-items: center;
   justify-content: center;
   overflow: clip;
-  background: var(--cream);
+  background: transparent;
 }
 
 /* Progress bar (left edge) */
