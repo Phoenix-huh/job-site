@@ -8,36 +8,25 @@ import { useEffect, useRef } from "react";
 // `speed: -1.5` moves extremely fast (foreground overlap depth).
 
 const ELEMENTS = [
-  // --- SOFT GORGEOUS AMBIENT ORBS (Deep Background) ---
-  { type: 'orb', top: '10vh', left: '-10vw', size: '60vw', color: 'rgba(16, 185, 129, 0.15)', blur: '120px', speed: -0.2, rot: 0 },
-  { type: 'orb', top: '120vh', right: '-15vw', size: '70vw', color: 'rgba(232, 99, 82, 0.12)', blur: '140px', speed: -0.3, rot: 0 },
-  { type: 'orb', top: '230vh', left: '5vw', size: '80vw', color: 'rgba(59, 130, 246, 0.1)', blur: '150px', speed: -0.15, rot: 0 },
-  { type: 'orb', top: '350vh', right: '10vw', size: '50vw', color: 'rgba(245, 158, 11, 0.15)', blur: '100px', speed: -0.25, rot: 0 },
+  // --- BOLD GORGEOUS AMBIENT ORBS (Deep Background) ---
+  // Increased opacities so they are highly visible and vibrant behind sections
+  { type: 'orb', top: '10vh', left: '-10vw', size: '60vw', color: 'rgba(16, 185, 129, 0.45)', blur: '100px', speed: -0.2, rot: 0 },
+  { type: 'orb', top: '120vh', right: '-15vw', size: '70vw', color: 'rgba(232, 99, 82, 0.35)', blur: '120px', speed: -0.3, rot: 0 },
+  { type: 'orb', top: '230vh', left: '5vw', size: '80vw', color: 'rgba(59, 130, 246, 0.4)', blur: '140px', speed: -0.15, rot: 0 },
+  { type: 'orb', top: '350vh', right: '10vw', size: '50vw', color: 'rgba(245, 158, 11, 0.45)', blur: '90px', speed: -0.25, rot: 0 },
 
   // --- DISTINCT GEOMETRIC VECTORS (Midground / Layer 2) ---
-  // Large stroke circles
-  { type: 'circle', top: '40vh', right: '5vw', size: '30vw', stroke: 'rgba(232, 99, 82, 0.2)', strokeWidth: '2px', speed: -0.6, rot: 0.02 },
-  { type: 'circle', top: '160vh', left: '-5vw', size: '40vw', stroke: 'rgba(16, 185, 129, 0.2)', strokeWidth: '1px', speed: -0.5, rot: -0.01 },
-  { type: 'circle', top: '280vh', right: '20vw', size: '25vw', stroke: 'rgba(59, 130, 246, 0.3)', strokeWidth: '4px', speed: -0.7, rot: 0.03 },
+  // Large stroke circles made slightly thicker and more vibrant
+  { type: 'circle', top: '40vh', right: '5vw', size: '30vw', stroke: 'rgba(232, 99, 82, 0.4)', strokeWidth: '4px', speed: -0.6, rot: 0.02 },
+  { type: 'circle', top: '160vh', left: '-5vw', size: '40vw', stroke: 'rgba(16, 185, 129, 0.4)', strokeWidth: '3px', speed: -0.5, rot: -0.01 },
+  { type: 'circle', top: '280vh', right: '20vw', size: '25vw', stroke: 'rgba(59, 130, 246, 0.5)', strokeWidth: '6px', speed: -0.7, rot: 0.03 },
 
   // Elegant floating crosses (Threat Indicators)
-  { type: 'cross', top: '20vh', left: '15vw', size: '40px', color: 'rgba(107, 107, 107, 0.4)', speed: -1.2, rot: 0.05 },
-  { type: 'cross', top: '80vh', right: '25vw', size: '25px', color: 'rgba(232, 99, 82, 0.5)', speed: -1.4, rot: -0.08 },
-  { type: 'cross', top: '180vh', left: '30vw', size: '50px', color: 'rgba(16, 185, 129, 0.3)', speed: -0.9, rot: 0.04 },
-  { type: 'cross', top: '250vh', right: '10vw', size: '35px', color: 'rgba(59, 130, 246, 0.5)', speed: -1.5, rot: -0.06 },
-  { type: 'cross', top: '320vh', left: '20vw', size: '60px', color: 'rgba(245, 158, 11, 0.4)', speed: -1.1, rot: 0.03 },
-
-  // --- FOREGROUND PARTICLES (Layer 3) ---
-  // Generate 15 random fast-moving foreground data dots
-  ...Array.from({ length: 15 }).map((_, i) => ({
-    type: 'dot',
-    top: `${Math.random() * 400}vh`,
-    left: `${Math.random() * 100}vw`,
-    size: `${6 + Math.random() * 12}px`,
-    color: ['#E86352', '#10b981', '#3b82f6', '#6b6b6b'][Math.floor(Math.random() * 4)],
-    speed: -1.3 - Math.random() * 0.8, // Moves super fast (pure foreground)
-    rot: 0
-  }))
+  { type: 'cross', top: '20vh', left: '15vw', size: '40px', color: 'rgba(107, 107, 107, 0.6)', speed: -1.2, rot: 0.05 },
+  { type: 'cross', top: '80vh', right: '25vw', size: '25px', color: 'rgba(232, 99, 82, 0.7)', speed: -1.4, rot: -0.08 },
+  { type: 'cross', top: '180vh', left: '30vw', size: '50px', color: 'rgba(16, 185, 129, 0.6)', speed: -0.9, rot: 0.04 },
+  { type: 'cross', top: '250vh', right: '10vw', size: '35px', color: 'rgba(59, 130, 246, 0.8)', speed: -1.5, rot: -0.06 },
+  { type: 'cross', top: '320vh', left: '20vw', size: '60px', color: 'rgba(245, 158, 11, 0.6)', speed: -1.1, rot: 0.03 }
 ];
 
 export default function CinematicParallax() {

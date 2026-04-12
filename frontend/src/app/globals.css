@@ -599,10 +599,12 @@ body {
 /* Content on the right */
 .dial-content {
   position: absolute;
-  right: 8%;
+  left: 55%; /* Push it to the right half cleanly without clipping */
   top: 50%;
   transform: translateY(-50%);
-  max-width: 420px;
+  width: 40%; /* Take up the remaining space dynamically */
+  max-width: 460px; /* Slightly wider to accommodate huge text */
+  padding-right: 5%; /* Safe padding against the right absolute margin */
   text-align: left;
 }
 .dial-content-num {
