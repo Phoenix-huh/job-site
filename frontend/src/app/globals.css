@@ -566,7 +566,6 @@ body {
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
-  gap: 8px;
   transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
@@ -585,6 +584,9 @@ body {
   font-weight: 900;
 }
 .dial-orbit-name {
+  position: absolute;
+  left: 100%;
+  margin-left: 12px; /* Replaces flex gap */
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--dark);

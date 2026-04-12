@@ -306,9 +306,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Geo decoration */}
-        <div className="geo-line geo-line--v" style={{ top: "10%", right: "15%" }} />
-        <div className="geo-dot" style={{ top: "10%", right: "15%", transform: "translate(-3px, -4px)" }} />
+        {/* Geo decoration removed */}
       </section>
 
       {/* ═══════════ SCENE 3: ROTATING DIAL ═══════════ */}
