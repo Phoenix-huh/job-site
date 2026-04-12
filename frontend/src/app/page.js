@@ -107,6 +107,7 @@ export default function Home() {
   const [dialProgress, setDialProgress] = useState(0);
   const [dialRotation, setDialRotation] = useState(0);
   const [navDark, setNavDark] = useState(false);
+  const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'internships'
 
   const toolRef = useRef(null);
   const dialRef = useRef(null);
@@ -424,8 +425,8 @@ export default function Home() {
               <Reveal delay={1}>
                 <div className="step-card">
                   <div className="step-num">01</div>
-                  <h3 className="step-title">Scrape</h3>
-                  <p className="step-desc">Our bot scrapes thousands of listings from Naukri daily using stealth browser emulation.</p>
+                  <h3 className="step-title">Extract</h3>
+                  <p className="step-desc">We use our secure browser extension to seamlessly aggregate listings directly from Naukri.</p>
                 </div>
               </Reveal>
               <Reveal delay={2}>
@@ -521,18 +522,24 @@ export default function Home() {
             </div>
 
             <Reveal delay={1}>
-              <div className="tool-filter">
-                <div className="select-wrap">
-                  <select
-                    className="hero-select"
-                    value={activeRole || ""}
-                    onChange={(e) => setActiveRole(e.target.value || null)}
-                  >
-                    <option value="">All Positions ({stats.total} jobs)</option>
-                    {roles.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <div className="select-chevron">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+              <div className="tool-controls">
+                <div className="tool-tabs">
+                  <button className={`tool-tab ${activeTab === 'jobs' ? 'active' : ''}`} onClick={() => setActiveTab('jobs')}>Jobs</button>
+                  <button className={`tool-tab ${activeTab === 'internships' ? 'active' : ''}`} onClick={() => setActiveTab('internships')}>Internships</button>
+                </div>
+                <div className="tool-filter">
+                  <div className="select-wrap">
+                    <select
+                      className="hero-select"
+                      value={activeRole || ""}
+                      onChange={(e) => setActiveRole(e.target.value || null)}
+                    >
+                      <option value="">All Positions ({stats.total} listings)</option>
+                      {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <div className="select-chevron">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -542,15 +549,21 @@ export default function Home() {
               <>
                 {loading ? (
                   <div className="empty-state">Loading...</div>
-                ) : jobs.length === 0 ? (
-                  <div className="empty-state">No jobs found for this position.</div>
-                ) : (
-                  <Reveal delay={2}>
-                    <div className="results-grid">
-                      {/* List */}
-                      <div className="job-list custom-scrollbar">
-                        <p className="list-count">{jobs.length} results · safest first</p>
-                        {jobs.map((job) => {
+                ) : (() => {
+                    const filteredJobs = jobs.filter(job => {
+                      const isIntern = job.title.toLowerCase().includes('intern') || (job.role && job.role.toLowerCase().includes('intern'));
+                      return activeTab === 'internships' ? isIntern : !isIntern;
+                    });
+                    
+                    return filteredJobs.length === 0 ? (
+                      <div className="empty-state">No {activeTab} found for this position.</div>
+                    ) : (
+                      <Reveal delay={2}>
+                        <div className="results-grid">
+                          {/* List */}
+                          <div className="job-list custom-scrollbar">
+                            <p className="list-count">{filteredJobs.length} results · safest first</p>
+                            {filteredJobs.map((job) => {
                           const info = si(job.score);
                           const active = selectedJob?.id === job.id;
                           return (
@@ -635,7 +648,8 @@ export default function Home() {
                       </div>
                     </div>
                   </Reveal>
-                )}
+                );
+                })()}
               </>
             )}
           </div>

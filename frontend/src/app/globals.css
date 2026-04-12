@@ -650,8 +650,13 @@ body {
   gap: 24px;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: stretch;
   width: 100%;
   max-width: 1000px;
+}
+.steps-grid > div {
+  display: flex;
+  height: auto;
 }
 .step-card {
   background: rgba(255,255,255,0.5);
@@ -663,6 +668,9 @@ body {
   text-align: center;
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.4s;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 .step-card:hover {
   transform: translateY(-8px);
@@ -741,6 +749,40 @@ body {
   text-align: center;
   max-width: 600px;
 }
+.tool-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+.tool-tabs {
+  display: flex;
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  border-radius: 99px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.tool-tab {
+  padding: 10px 24px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  border-radius: 99px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.tool-tab.active {
+  background: var(--dark);
+  color: var(--cream);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
 .tool-filter {
   width: 100%;
   max-width: 420px;
@@ -749,24 +791,28 @@ body {
 .select-wrap { position: relative; }
 .hero-select {
   width: 100%;
-  padding: 16px 48px 16px 24px;
-  background: rgba(255,255,255,0.7);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 16px;
+  padding: 18px 48px 18px 24px;
+  background: #ffffff;
+  border: 2px solid transparent;
+  border-radius: 20px;
   color: var(--dark);
   font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  font-weight: 700;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04);
+  transition: all 0.3s ease;
+}
+.hero-select:hover {
+  box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
 }
 .hero-select:focus {
   border-color: var(--coral);
-  box-shadow: 0 0 0 3px rgba(232,99,82,0.15);
+  box-shadow: 0 0 0 4px rgba(232,99,82,0.1);
 }
 .hero-select option { background: var(--cream); }
 .select-chevron {
