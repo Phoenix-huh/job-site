@@ -1,5 +1,5 @@
 import "./globals.css";
-import ParallaxFX from "./components/ParallaxFX";
+import Themed3DFX from "./components/Themed3DFX";
 
 export const metadata = {
   title: "ShieldDB — Job Scam Intelligence",
@@ -14,7 +14,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <ParallaxFX />
+        <Themed3DFX />
         {children}
       </body>
     </html>
