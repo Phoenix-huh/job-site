@@ -1,5 +1,5 @@
 import "./globals.css";
-import Themed3DFX from "./components/Themed3DFX";
+import HeroShield3D from "./components/HeroShield3D";
 
 export const metadata = {
   title: "ShieldDB — Job Scam Intelligence",
@@ -14,7 +14,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <Themed3DFX />
+        <HeroShield3D />
         {children}
       </body>
     </html>
