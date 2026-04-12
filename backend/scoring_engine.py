@@ -74,7 +74,36 @@ def analyze_job(full_text: str, company: str, email: str):
         except Exception as e:
             flags.append("WARN: [P3] Registry API temporarily unavailable.")
     
+    # P5: RDAP Domain Age Check
     domain_established = False
+    if official_domain:
+        try:
+            rdap_req = urllib.request.Request(
+                f"https://rdap.org/domain/{official_domain}",
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(rdap_req, timeout=5) as rdap_response:
+                rdap_data = json.loads(rdap_response.read().decode())
+                reg_event = None
+                for event in rdap_data.get("events", []):
+                    if event.get("eventAction", "").lower() in ("registration",):
+                        reg_event = event
+                        break
+                if reg_event and reg_event.get("eventDate"):
+                    from datetime import datetime, timezone
+                    reg_date = datetime.fromisoformat(reg_event["eventDate"].replace("Z", "+00:00"))
+                    age_days = (datetime.now(timezone.utc) - reg_date).days
+                    if age_days < 90:
+                        raw_threats.append({"penalty": 35, "message": f"Domain registered {age_days} days ago — very new.", "paramId": 5, "severity": "crit", "category": "verification", "trustPiercing": False})
+                    elif age_days < 180:
+                        raw_threats.append({"penalty": 15, "message": f"Domain is less than 6 months old.", "paramId": 5, "severity": "warn", "category": "verification", "trustPiercing": False})
+                    else:
+                        domain_established = True
+                        trust_score += 10
+                        flags.append(f"SAFE: Domain age verified ({age_days // 365}+ years).")
+        except Exception:
+            pass  # RDAP lookup failed — skip silently
+
     trust_tier = 1
     if company_verified and (has_corporate_email or domain_established):
         trust_tier = 3

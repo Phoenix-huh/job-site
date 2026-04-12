@@ -49,8 +49,9 @@ def get_stats(db: Session = Depends(get_db)):
     """Quick stats for the dashboard."""
     total = db.query(models.Job).count()
     safe = db.query(models.Job).join(models.Score).filter(models.Score.final_score < 31).count()
+    caution = db.query(models.Job).join(models.Score).filter(models.Score.final_score >= 31, models.Score.final_score < 61).count()
     risky = db.query(models.Job).join(models.Score).filter(models.Score.final_score >= 61).count()
-    return {"total": total, "safe": safe, "risky": risky}
+    return {"total": total, "safe": safe, "caution": caution, "risky": risky}
 
 @app.get("/api/seed")
 def seed_database():

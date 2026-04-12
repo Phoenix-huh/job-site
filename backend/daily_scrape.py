@@ -1,6 +1,6 @@
 """
 Daily Scraper: Run this to scrape Naukri and populate the database.
-Usage: python3 daily_scrape.py [--roles "Data Analyst,Software Engineer"] [--max 5]
+Usage: python3 daily_scrape.py [--roles "Data Analyst,Software Engineer"] [--max 20]
 
 Note: Opens a visible browser window (required to bypass Naukri's bot detection).
 """
@@ -39,6 +39,26 @@ ALL_ROLES = [
     "Data Scientist",
     "Project Manager",
     "Quality Analyst",
+    "Data Entry",
+    "Virtual Assistant",
+    "Graphic Designer",
+    "Digital Marketing",
+    "Freelance Writer",
+    "Online Tutor",
+    "SEO Specialist",
+    "Accountant",
+    "Web Developer",
+    "System Administrator",
+    "Network Engineer",
+    "HR Recruiter",
+    "Executive Assistant",
+    "Translator",
+    "Social Media Manager",
+    "Call Center Executive",
+    "Operations Manager",
+    "Video Editor",
+    "Mobile App Developer",
+    "Cybersecurity Engineer"
 ]
 
 async def run(roles, max_per_role):
@@ -107,7 +127,7 @@ async def run(roles, max_per_role):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrape Naukri and populate ShieldDB")
     parser.add_argument("--roles", type=str, default=None, help="Comma-separated roles to scrape (default: all)")
-    parser.add_argument("--max", type=int, default=5, help="Max jobs per role (default: 5)")
+    parser.add_argument("--max", type=int, default=20, help="Max jobs per role (default: 20)")
     args = parser.parse_args()
     
     roles = args.roles.split(",") if args.roles else ALL_ROLES

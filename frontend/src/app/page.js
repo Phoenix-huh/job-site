@@ -100,7 +100,7 @@ export default function Home() {
   const [roles, setRoles] = useState([]);
   const [activeRole, setActiveRole] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
-  const [stats, setStats] = useState({ total: 0, safe: 0, risky: 0 });
+  const [stats, setStats] = useState({ total: 0, safe: 0, caution: 0, risky: 0 });
   const [loading, setLoading] = useState(false);
   const [toolRevealed, setToolRevealed] = useState(false);
   const [dialIndex, setDialIndex] = useState(0);
@@ -472,14 +472,14 @@ export default function Home() {
               </Reveal>
               <Reveal delay={3}>
                 <div className="big-stat">
-                  <span className="big-stat-num stat-danger"><Counter to={stats.risky} /></span>
-                  <span className="big-stat-label">Flagged Risky</span>
+                  <span className="big-stat-num" style={{ color: "#f59e0b" }}><Counter to={stats.caution || 0} /></span>
+                  <span className="big-stat-label">Caution (Verify)</span>
                 </div>
               </Reveal>
               <Reveal delay={4}>
                 <div className="big-stat">
-                  <span className="big-stat-num stat-blue"><Counter to={roles.length} /></span>
-                  <span className="big-stat-label">Roles Covered</span>
+                  <span className="big-stat-num stat-danger"><Counter to={stats.risky} /></span>
+                  <span className="big-stat-label">Flagged Risky</span>
                 </div>
               </Reveal>
             </div>

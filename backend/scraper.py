@@ -10,40 +10,67 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
 async def get_search_results(page, role, max_jobs=10):
-    """Get list of job URLs + basic info from search results page."""
+    """Get list of job URLs + basic info from search results pages (supports pagination)."""
     slug = role.replace(' ', '-').lower()
-    url = f"https://www.naukri.com/{slug}-jobs"
     
-    print(f"  Loading search page: {url}")
-    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    await asyncio.sleep(random.uniform(6, 10))
+    all_cards = []
+    page_num = 1
     
-    # Scroll to load lazy content
-    for _ in range(3):
-        await page.mouse.wheel(0, 500)
-        await asyncio.sleep(random.uniform(1, 2))
-    
-    # Extract job cards
-    cards = await page.evaluate('''() => {
-        const results = [];
-        document.querySelectorAll('.cust-job-tuple, .srp-jobtuple-wrapper').forEach(card => {
-            const titleEl = card.querySelector('a.title');
-            const compEl = card.querySelector('.comp-name, .comp-dtls-wrap a, .subTitle');
-            const descEl = card.querySelector('.job-desc, .ellipsis, .job-description');
+    while len(all_cards) < max_jobs:
+        url = f"https://www.naukri.com/{slug}-jobs" if page_num == 1 else f"https://www.naukri.com/{slug}-jobs-{page_num}"
+        print(f"  Loading search page {page_num}: {url}")
+        
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            print(f"  Failed to load {url}: {e}")
+            break
             
-            if (titleEl) {
-                results.push({
-                    title: titleEl.textContent.trim(),
-                    url: titleEl.href,
-                    company: compEl ? compEl.textContent.trim() : 'Unknown',
-                    snippet: descEl ? descEl.textContent.trim() : '',
-                });
-            }
-        });
-        return results;
-    }''')
-    
-    return cards[:max_jobs]
+        await asyncio.sleep(random.uniform(6, 10))
+        
+        # Scroll to load lazy content
+        for _ in range(3):
+            await page.mouse.wheel(0, 500)
+            await asyncio.sleep(random.uniform(1, 2))
+        
+        # Extract job cards
+        cards = await page.evaluate('''() => {
+            const results = [];
+            document.querySelectorAll('.cust-job-tuple, .srp-jobtuple-wrapper').forEach(card => {
+                const titleEl = card.querySelector('a.title');
+                const compEl = card.querySelector('.comp-name, .comp-dtls-wrap a, .subTitle');
+                const descEl = card.querySelector('.job-desc, .ellipsis, .job-description');
+                
+                if (titleEl) {
+                    results.push({
+                        title: titleEl.textContent.trim(),
+                        url: titleEl.href,
+                        company: compEl ? compEl.textContent.trim() : 'Unknown',
+                        snippet: descEl ? descEl.textContent.trim() : '',
+                    });
+                }
+            });
+            return results;
+        }''')
+        
+        if not cards:
+            print(f"  No more jobs found on page {page_num}.")
+            break
+            
+        # Append unique cards
+        for card in cards:
+            if not any(c.get("url") == card["url"] for c in all_cards):
+                all_cards.append(card)
+                if len(all_cards) >= max_jobs:
+                    break
+        
+        if len(all_cards) >= max_jobs:
+            break
+            
+        page_num += 1
+        await asyncio.sleep(random.uniform(4, 8))
+        
+    return all_cards[:max_jobs]
 
 async def get_job_description(page, url):
     """Load individual job page and extract full description."""
