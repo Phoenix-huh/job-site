@@ -108,6 +108,7 @@ export default function Home() {
   const [dialRotation, setDialRotation] = useState(0);
   const [navDark, setNavDark] = useState(false);
   const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'internships'
+  const [searchQuery, setSearchQuery] = useState('');
 
   const toolRef = useRef(null);
   const dialRef = useRef(null);
@@ -283,21 +284,27 @@ export default function Home() {
             <div className="problem-row">
               <Reveal delay={2}>
                 <div className="problem-card">
-                  <div className="problem-icon">📧</div>
+                  <div className="problem-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                  </div>
                   <h3 className="problem-stat"><Counter to={73} suffix="%" /></h3>
                   <p className="problem-desc">of scam listings use<br /><strong>fake email domains</strong></p>
                 </div>
               </Reveal>
               <Reveal delay={3}>
                 <div className="problem-card">
-                  <div className="problem-icon">💸</div>
+                  <div className="problem-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+                  </div>
                   <h3 className="problem-stat"><Counter to={45} suffix="%" /></h3>
                   <p className="problem-desc">demand <strong>upfront fees</strong><br />for &quot;processing&quot;</p>
                 </div>
               </Reveal>
               <Reveal delay={4}>
                 <div className="problem-card">
-                  <div className="problem-icon">🪪</div>
+                  <div className="problem-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="8" r="2"/><path d="M15 13a3 3 0 0 0-6 0"/></svg>
+                  </div>
                   <h3 className="problem-stat"><Counter to={62} suffix="%" /></h3>
                   <p className="problem-desc">request <strong>Aadhaar/PAN</strong><br />before any interview</p>
                 </div>
@@ -520,25 +527,28 @@ export default function Home() {
             </div>
 
             <Reveal delay={1}>
-              <div className="tool-controls">
+              <div className="toolbar-row">
                 <div className="tool-tabs">
                   <button className={`tool-tab ${activeTab === 'jobs' ? 'active' : ''}`} onClick={() => setActiveTab('jobs')}>Jobs</button>
                   <button className={`tool-tab ${activeTab === 'internships' ? 'active' : ''}`} onClick={() => setActiveTab('internships')}>Internships</button>
                 </div>
-                <div className="tool-filter">
-                  <div className="select-wrap">
-                    <select
-                      className="hero-select"
-                      value={activeRole || ""}
-                      onChange={(e) => setActiveRole(e.target.value || null)}
-                    >
-                      <option value="">All Positions ({stats.total} listings)</option>
-                      {roles.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                    <div className="select-chevron">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </div>
+                <div className="select-wrap">
+                  <span className="select-label">Position:</span>
+                  <select
+                    className="hero-select"
+                    value={activeRole || ""}
+                    onChange={(e) => setActiveRole(e.target.value || null)}
+                  >
+                    <option value="">All Positions ({stats.total} listings)</option>
+                    {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <div className="select-chevron">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
                   </div>
+                </div>
+                <div className="search-wrap">
+                  <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input type="text" className="search-input" placeholder="Search jobs..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 </div>
               </div>
             </Reveal>
@@ -548,37 +558,44 @@ export default function Home() {
                 {loading ? (
                   <div className="empty-state">Loading...</div>
                 ) : (() => {
+                    const query = searchQuery.toLowerCase();
                     const filteredJobs = jobs.filter(job => {
                       const isIntern = job.title.toLowerCase().includes('intern') || (job.role && job.role.toLowerCase().includes('intern'));
-                      return activeTab === 'internships' ? isIntern : !isIntern;
+                      const tabMatch = activeTab === 'internships' ? isIntern : !isIntern;
+                      const textMatch = job.title.toLowerCase().includes(query) || job.company.toLowerCase().includes(query);
+                      return tabMatch && textMatch;
                     });
                     
                     return filteredJobs.length === 0 ? (
-                      <div className="empty-state">No {activeTab} found for this position.</div>
+                      <div className="empty-state">No {activeTab} found for this position matching your search.</div>
                     ) : (
                       <Reveal delay={2}>
+                        <h3 className="job-list-heading">Verified Roles <span className="job-list-count">({filteredJobs.length} listings)</span></h3>
                         <div className="results-grid">
                           {/* List */}
-                          <div className="job-list custom-scrollbar">
-                            <p className="list-count">{filteredJobs.length} results · safest first</p>
-                            {filteredJobs.map((job) => {
-                          const info = si(job.score);
-                          const active = selectedJob?.id === job.id;
-                          return (
-                            <div key={job.id} onClick={() => setSelectedJob(job)} className={`job-card ${active ? "job-card-active" : ""}`}>
-                              <div className="job-card-inner">
-                                <div className={`score-pill ${info.cls}`}>
-                                  {job.score ? `${Math.round(job.score.final_score)}%` : "—"}
+                          <div className="job-list-col">
+                            <div className="job-list custom-scrollbar">
+                              {filteredJobs.map((job) => {
+                            const info = si(job.score);
+                            const active = selectedJob?.id === job.id;
+                            return (
+                              <div key={job.id} onClick={() => setSelectedJob(job)} className={`job-card ${active ? "job-card-active" : ""}`}>
+                                <div className="job-card-inner">
+                                  <div className={`score-ring ${info.cls}`}>
+                                    <span className="score-num">{job.score ? `${Math.round(job.score.final_score)}%` : "—"}</span>
+                                  </div>
+                                  <div className="job-card-text">
+                                    <p className="job-card-title">{job.title}</p>
+                                    <p className="job-card-company">{job.company}</p>
+                                  </div>
+                                  <div className={`job-card-badge badge-${info.cls}`}>
+                                    {info.label}
+                                  </div>
                                 </div>
-                                <div className="job-card-text">
-                                  <p className="job-card-title">{job.title}</p>
-                                  <p className="job-card-company">{job.company}</p>
-                                </div>
-                                <span className="job-card-risk" style={{ color: info.color }}>{info.label}</span>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Detail */}
@@ -590,7 +607,6 @@ export default function Home() {
                                 <h2 className="detail-title">{selectedJob.title}</h2>
                                 <div className="detail-meta">
                                   <span className="detail-company">{selectedJob.company}</span>
-                                  {selectedJob.role && <span className="detail-role-badge">{selectedJob.role}</span>}
                                   {selectedJob.url && <a href={selectedJob.url} target="_blank" rel="noreferrer" className="detail-link">View Original ↗</a>}
                                 </div>
                               </div>
@@ -598,29 +614,34 @@ export default function Home() {
                                 const info = si(selectedJob.score);
                                 return (
                                   <div className="detail-score-wrap">
-                                    <div className={`score-pill big ${info.cls}`}>{Math.round(selectedJob.score.final_score)}%</div>
-                                    <span className="detail-score-label">Scam Score</span>
+                                    <div className={`score-ring big ${info.cls}`}><span className="score-num">{Math.round(selectedJob.score.final_score)}%</span></div>
+                                    <span className="detail-score-label" style={{display: 'flex', alignItems: 'center', gap: '4px'}}>SCAM SCORE <span style={{fontSize: '0.7rem'}}>?</span></span>
                                   </div>
                                 );
                               })()}
                             </div>
+                            {selectedJob.description && (
+                              <div className="detail-description">
+                                {selectedJob.description}
+                              </div>
+                            )}
                             {selectedJob.score && (
                               <div className="detail-body">
                                 {(() => {
                                   const v = verd(selectedJob.score);
                                   if (!v) return null;
                                   return (
-                                    <div className={`verdict ${v.bg}`}>
-                                      <span className="verdict-icon">{v.icon}</span>
+                                    <div className={`verdict-glass ${v.bg}`}>
+                                      <div className={`verdict-glass-icon ${v.bg}-icon`}>{v.icon}</div>
                                       <div>
-                                        <p className={`verdict-title ${v.c}`}>{v.t}</p>
-                                        <p className="verdict-desc">{v.d}</p>
+                                        <p className={`verdict-glass-title ${v.c}`}>{v.t}</p>
+                                        <p className="verdict-glass-desc">{v.d}</p>
                                       </div>
                                     </div>
                                   );
                                 })()}
                                 <div>
-                                  <h4 className="signals-heading">Threat Signals ({selectedJob.score.flags.length})</h4>
+                                  <h4 className="signals-heading">THREAT SIGNALS ({selectedJob.score.flags.length})</h4>
                                   <div className="signals-list">
                                     {selectedJob.score.flags.map((raw, i) => {
                                       let sev = "warn", lbl = "WARN", text = raw;
@@ -628,14 +649,17 @@ export default function Home() {
                                       else if (raw.startsWith("SAFE:")) { sev = "safe"; lbl = "SAFE"; text = raw.slice(6); }
                                       else if (raw.startsWith("WARN:")) { text = raw.slice(6); }
                                       return (
-                                        <div key={i} className={`flag flag-${sev}`}>
+                                        <div key={i} className={`flag-pill flag-${sev}`}>
                                           <span className="flag-badge">{lbl}</span>
                                           <span className="flag-text">{text}</span>
                                         </div>
                                       );
                                     })}
                                     {selectedJob.score.flags.length === 0 && (
-                                      <div className="flag flag-safe" style={{ justifyContent: "center" }}>✓ No threats detected</div>
+                                      <div className="flag-pill flag-safe">
+                                        <span className="flag-badge">SAFE</span>
+                                        <span className="flag-text">Verified globally as {selectedJob.company}</span>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
