@@ -98,7 +98,9 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [activeRole, setActiveRole] = useState(null);
+  const [activeLocation, setActiveLocation] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [stats, setStats] = useState({ total: 0, safe: 0, caution: 0, risky: 0 });
   const [loading, setLoading] = useState(false);
@@ -115,23 +117,41 @@ export default function Home() {
   const introRef = useRef(null);
 
   /* ─── API Fetches ─── */
+  const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 100;
+
   useEffect(() => {
     fetch(`${API}/api/roles`).then(r => r.json()).then(setRoles).catch(() => {});
+    fetch(`${API}/api/locations`).then(r => r.json()).then(setLocations).catch(() => {});
     fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!toolRevealed) return;
+  // Pre-fetch jobs immediately and on filter changes
+  const fetchJobs = useCallback((reset = true) => {
     setLoading(true);
-    const url = activeRole
-      ? `${API}/api/jobs?role=${encodeURIComponent(activeRole)}`
-      : `${API}/api/jobs`;
-    fetch(url)
+    const params = new URLSearchParams();
+    if (activeRole) params.set('role', activeRole);
+    if (activeLocation) params.set('location', activeLocation);
+    params.set('limit', String(PAGE_SIZE));
+    const currentOffset = reset ? 0 : jobs.length;
+    params.set('offset', String(currentOffset));
+    fetch(`${API}/api/jobs?${params.toString()}`)
       .then(r => r.json())
-      .then(data => { setJobs(data); setSelectedJob(data[0] || null); })
+      .then(data => {
+        const newJobs = reset ? data : [...jobs, ...data];
+        setJobs(newJobs);
+        setHasMore(data.length === PAGE_SIZE);
+        if (reset) setSelectedJob(data[0] || null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [activeRole, toolRevealed]);
+  }, [activeRole, activeLocation, jobs]);
+
+  // Fetch on mount + when filters change
+  useEffect(() => {
+    fetchJobs(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRole, activeLocation]);
 
   /* ─── Tool reveal observer ─── */
   useEffect(() => {
@@ -546,6 +566,20 @@ export default function Home() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
                   </div>
                 </div>
+                <div className="select-wrap">
+                  <span className="select-label">Location:</span>
+                  <select
+                    className="hero-select"
+                    value={activeLocation || ""}
+                    onChange={(e) => setActiveLocation(e.target.value || null)}
+                  >
+                    <option value="">All Locations</option>
+                    {locations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                  </select>
+                  <div className="select-chevron">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  </div>
+                </div>
                 <div className="search-wrap">
                   <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                   <input type="text" className="search-input" placeholder="Search jobs..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -555,14 +589,14 @@ export default function Home() {
 
             {toolRevealed && (
               <>
-                {loading ? (
+                {loading && jobs.length === 0 ? (
                   <div className="empty-state">Loading...</div>
                 ) : (() => {
                     const query = searchQuery.toLowerCase();
                     const filteredJobs = jobs.filter(job => {
                       const isIntern = job.title.toLowerCase().includes('intern') || (job.role && job.role.toLowerCase().includes('intern'));
                       const tabMatch = activeTab === 'internships' ? isIntern : !isIntern;
-                      const textMatch = job.title.toLowerCase().includes(query) || job.company.toLowerCase().includes(query);
+                      const textMatch = job.title.toLowerCase().includes(query) || job.company.toLowerCase().includes(query) || (job.location && job.location.toLowerCase().includes(query));
                       return tabMatch && textMatch;
                     });
                     
@@ -586,7 +620,7 @@ export default function Home() {
                                   </div>
                                   <div className="job-card-text">
                                     <p className="job-card-title">{job.title}</p>
-                                    <p className="job-card-company">{job.company}</p>
+                                    <p className="job-card-company">{job.company}{job.location && <span className="job-card-location"> · 📍 {job.location}</span>}</p>
                                   </div>
                                   <div className={`job-card-badge badge-${info.cls}`}>
                                     {info.label}
@@ -596,6 +630,11 @@ export default function Home() {
                             );
                           })}
                         </div>
+                        {hasMore && (
+                          <button className="load-more-btn" onClick={() => fetchJobs(false)} disabled={loading}>
+                            {loading ? 'Loading...' : 'Load More Jobs'}
+                          </button>
+                        )}
                       </div>
 
                       {/* Detail */}
@@ -607,6 +646,7 @@ export default function Home() {
                                 <h2 className="detail-title">{selectedJob.title}</h2>
                                 <div className="detail-meta">
                                   <span className="detail-company">{selectedJob.company}</span>
+                                  {selectedJob.location && <span className="detail-location-badge">📍 {selectedJob.location}</span>}
                                   {selectedJob.url && <a href={selectedJob.url} target="_blank" rel="noreferrer" className="detail-link">View Original ↗</a>}
                                 </div>
                               </div>

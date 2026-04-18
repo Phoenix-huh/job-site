@@ -21,6 +21,7 @@ class JobBase(BaseModel):
     url: Optional[str] = None
     description: str
     role: Optional[str] = None
+    location: Optional[str] = None
 
 class JobCreate(JobBase):
     pass

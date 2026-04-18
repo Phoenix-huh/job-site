@@ -989,6 +989,12 @@ body {
   letter-spacing: 0.05em;
   font-weight: 600;
 }
+.job-card-location {
+  color: var(--coral);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
 .job-card-badge {
   font-size: 0.6rem;
   font-weight: 700;
@@ -1054,6 +1060,15 @@ body {
   transition: color 0.2s;
 }
 .detail-link:hover { color: var(--dark); }
+.detail-location-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 20px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
 .detail-score-wrap {
   display: flex;
   flex-direction: column;
@@ -1295,4 +1310,32 @@ body {
   background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* ═══════════════════════════════════════
+   LOAD MORE BUTTON
+   ═══════════════════════════════════════ */
+.load-more-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 8px;
+  border: 1px dashed rgba(0,0,0,0.15);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.load-more-btn:hover {
+  background: rgba(0,0,0,0.03);
+  border-color: var(--coral);
+  color: var(--coral);
+}
+.load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }

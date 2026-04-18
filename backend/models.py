@@ -13,6 +13,7 @@ class Job(Base):
     url = Column(String, unique=True, index=True, nullable=True)
     description = Column(Text)
     role = Column(String, index=True, nullable=True)  # e.g. "Data Analyst", "Software Engineer"
+    location = Column(String, index=True, nullable=True)  # e.g. "Mumbai", "Remote", "Bangalore"
     created_at = Column(String, default=lambda: datetime.utcnow().isoformat())
 
     score = relationship("Score", back_populates="job", uselist=False)
