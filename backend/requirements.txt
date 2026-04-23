@@ -8,3 +8,7 @@ python-dotenv
 uvicorn
 pydantic
 requests
+passlib[bcrypt]
+pyjwt
+python-multipart
+sse-starlette

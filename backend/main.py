@@ -1,12 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, case, text
+from sqlalchemy import func, case
 from typing import List, Optional
+from sse_starlette.sse import EventSourceResponse
+
+import auth
 import models
 import schemas
 from database import engine, get_db
+from notification import manager
+
 # Try to import the injector script for remote execution
 import sys
 import os
@@ -15,8 +21,11 @@ try:
     from inject_real_data import inject
 except ImportError:
     inject = None
+
 models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="ShieldDB API")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,6 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 @app.get("/api/jobs", response_model=List[schemas.JobOut])
 def get_jobs(
     role: Optional[str] = Query(None),
@@ -48,16 +58,19 @@ def get_jobs(
     )
     jobs = query.offset(offset).limit(limit).all()
     return jobs
+
 @app.get("/api/roles")
 def get_roles(db: Session = Depends(get_db)):
     """Get all available roles in the database."""
     roles = db.query(models.Job.role).distinct().all()
     return [r[0] for r in roles if r[0]]
+
 @app.get("/api/locations")
 def get_locations(db: Session = Depends(get_db)):
     """Get all available locations in the database."""
     locations = db.query(models.Job.location).distinct().all()
     return sorted([loc[0] for loc in locations if loc[0]])
+
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):
     """Quick stats for the dashboard."""
@@ -66,6 +79,7 @@ def get_stats(db: Session = Depends(get_db)):
     caution = db.query(models.Job).join(models.Score).filter(models.Score.final_score >= 31, models.Score.final_score < 61).count()
     risky = db.query(models.Job).join(models.Score).filter(models.Score.final_score >= 61).count()
     return {"total": total, "safe": safe, "caution": caution, "risky": risky}
+
 @app.get("/api/seed")
 def seed_database():
     """Trigger the real-data injection script remotely."""
@@ -75,6 +89,7 @@ def seed_database():
         return {"status": "success", "message": "Database seeded successfully with 3 real-world jobs."}
     else:
         raise HTTPException(status_code=500, detail="Injection script not found or could not be loaded.")
+
 @app.get("/api/jobs/{job_id}", response_model=schemas.JobOut)
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
@@ -82,183 +97,114 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
+# --- Global Exception Handler (Error Handling) ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Let HTTPExceptions pass through with their proper status codes
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    # Log the actual error for debugging
+    import traceback
+    traceback.print_exc()
+    # Only catch truly unexpected errors
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please try again later.", "type": str(type(exc).__name__)}
+    )
 
-# ==================== DATA VIEWER ENDPOINTS ====================
-@app.get("/view-data/{table_name}", response_class=HTMLResponse)
-def view_data(table_name: str = "jobs", limit: int = Query(100, ge=1, le=1000), db: Session = Depends(get_db)):
-    """
-    View data from any table as an HTML table.
-    Usage:
-    - /view-data/jobs
-    - /view-data/scores
-    - /view-data/comments
-    """
+# --- Authentication & Authorization ---
+@app.post("/api/auth/register")
+def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     try:
-        # Validate table name (prevent SQL injection)
-        valid_tables = ["jobs", "scores", "comments"]
-        if table_name.lower() not in valid_tables:
-            return f"<h1>Error</h1><p>Invalid table. Available tables: {', '.join(valid_tables)}</p>"
+        db_user = db.query(models.User).filter(models.User.email == user_in.email).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
         
-        # Execute raw SQL to fetch data
-        result = db.execute(text(f"SELECT * FROM {table_name} LIMIT {limit}"))
-        rows = result.fetchall()
-        columns = result.keys()
+        hashed_password = auth.get_password_hash(user_in.password)
+        # the first user created is admin, others aren't by default (just for demo purposes)
+        is_admin = db.query(models.User).count() == 0 
         
-        if not rows:
-            return f"""
-            <html>
-            <head>
-                <title>Database Viewer - {table_name}</title>
-                <style>
-                    body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }}
-                    h1 {{ color: #333; margin-bottom: 20px; }}
-                    .nav {{ margin-bottom: 20px; display: flex; gap: 10px; }}
-                    .nav a {{ padding: 10px 15px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; transition: background 0.3s; }}
-                    .nav a:hover {{ background: #0056b3; }}
-                    .info {{ padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404; }}
-                </style>
-            </head>
-            <body>
-                <h1>🗄️ Database Viewer: {table_name.upper()}</h1>
-                <div class="nav">
-                    <a href="/view-data/jobs">📋 View Jobs</a>
-                    <a href="/view-data/scores">⭐ View Scores</a>
-                    <a href="/view-data/comments">💬 View Comments</a>
-                </div>
-                <div class="info">
-                    <strong>No data found</strong> in the {table_name} table. Try running /api/seed to populate sample data.
-                </div>
-            </body>
-            </html>
-            """
-        
-        # Build HTML table
-        html_rows = ""
-        for row in rows:
-            cells = "".join([f"<td>{str(row[col])[:100]}</td>" for col in columns])
-            html_rows += f"<tr>{cells}</tr>"
-        
-        headers = "".join([f"<th>{col}</th>" for col in columns])
-        
-        html = f"""
-        <html>
-        <head>
-            <title>Database Viewer - {table_name}</title>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }}
-                h1 {{ color: #333; margin-bottom: 10px; }}
-                .stats {{ margin-bottom: 20px; color: #666; font-size: 14px; }}
-                .nav {{ margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }}
-                .nav a {{ padding: 10px 15px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; transition: background 0.3s; }}
-                .nav a:hover {{ background: #0056b3; }}
-                .nav a.active {{ background: #28a745; }}
-                table {{ 
-                    border-collapse: collapse; 
-                    width: 100%; 
-                    background: white; 
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    border-radius: 4px;
-                    overflow: hidden;
-                }}
-                th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
-                th {{ background: #007bff; color: white; font-weight: 600; }}
-                tr:nth-child(even) {{ background: #f9f9f9; }}
-                tr:hover {{ background: #f0f0f0; }}
-                td {{ word-break: break-word; max-width: 200px; }}
-            </style>
-        </head>
-        <body>
-            <h1>🗄️ Database Viewer: {table_name.upper()}</h1>
-            <div class="stats">
-                📊 Showing <strong>{len(rows)}</strong> record(s) from table <strong>{table_name}</strong>
-            </div>
-            <div class="nav">
-                <a href="/view-data/jobs" {'class="active"' if table_name == 'jobs' else ''}>📋 View Jobs</a>
-                <a href="/view-data/scores" {'class="active"' if table_name == 'scores' else ''}>⭐ View Scores</a>
-                <a href="/view-data/comments" {'class="active"' if table_name == 'comments' else ''}>💬 View Comments</a>
-            </div>
-            <table>
-                <thead>
-                    <tr>{headers}</tr>
-                </thead>
-                <tbody>
-                    {html_rows}
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-        return html
+        user = models.User(
+            email=user_in.email,
+            username=user_in.username,
+            hashed_password=hashed_password,
+            is_admin=is_admin
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"id": user.id, "email": user.email, "username": user.username, "is_active": user.is_active, "is_admin": user.is_admin}
+    except HTTPException:
+        raise
     except Exception as e:
-        return f"""
-        <html>
-        <head>
-            <title>Error</title>
-            <style>
-                body {{ font-family: Arial; margin: 20px; background: #f5f5f5; }}
-                .error {{ background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 4px; }}
-            </style>
-        </head>
-        <body>
-            <h1>❌ Error</h1>
-            <div class="error">
-                <strong>Error Details:</strong><br>
-                {str(e)}
-            </div>
-        </body>
-        </html>
-        """
+        import traceback
+        traceback.print_exc()
+        raise
 
+@app.post("/api/auth/token", response_model=schemas.Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    
+    access_token = auth.create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/view-all", response_class=HTMLResponse)
-def view_all(db: Session = Depends(get_db)):
-    """View summary of all tables in the database"""
-    try:
-        stats = {
-            "jobs": db.query(models.Job).count(),
-            "scores": db.query(models.Score).count(),
-            "comments": db.query(models.Comment).count() if hasattr(models, 'Comment') else 0,
-        }
+# --- Notifications (SSE) ---
+@app.get("/api/notifications/stream")
+async def notification_stream():
+    """Subscribe to events (e.g. new jobs added) via Server-Sent Events."""
+    return EventSourceResponse(manager.get_generator())
+
+@app.post("/api/notifications/publish", status_code=202)
+def publish_notification(payload: dict, db: Session = Depends(get_db)):
+    """Internal endpoint to publish events from scripts."""
+    # Could protect this with an internal api key instead
+    manager.publish(payload)
+    return {"status": "published"}
+
+# --- RESTful endpoints for Jobs (Admin Only) ---
+@app.post("/api/jobs", response_model=schemas.JobOut, status_code=201)
+def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    """REST: Create a new job manually (admin only)."""
+    db_job = models.Job(**job.model_dump())
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
+    
+    # Notify connected clients
+    manager.publish({"event": "new_job", "job_id": db_job.id, "title": db_job.title})
+    
+    return db_job
+
+@app.put("/api/jobs/{job_id}", response_model=schemas.JobOut)
+def update_job(job_id: int, job_update: schemas.JobCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    """REST: Update a job manually (admin only)."""
+    db_job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not db_job:
+        raise HTTPException(status_code=404, detail="Job not found")
         
-        table_links = "".join([
-            f'<li><a href="/view-data/{table}">{table.upper()} ({count} records)</a></li>'
-            for table, count in stats.items()
-        ])
+    for key, value in job_update.model_dump(exclude_unset=True).items():
+        setattr(db_job, key, value)
         
-        html = f"""
-        <html>
-        <head>
-            <title>Database Overview</title>
-            <style>
-                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #f5f5f5; }}
-                h1 {{ color: #333; }}
-                .container {{ background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 600px; }}
-                ul {{ list-style: none; padding: 0; }}
-                li {{ margin: 15px 0; }}
-                a {{ 
-                    display: block;
-                    padding: 15px 20px;
-                    background: #007bff;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 4px;
-                    transition: background 0.3s;
-                    font-weight: 500;
-                }}
-                a:hover {{ background: #0056b3; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>🗄️ Database Overview</h1>
-                <p>Select a table to view its data:</p>
-                <ul>
-                    {table_links}
-                </ul>
-            </div>
-        </body>
-        </html>
-        """
-        return html
-    except Exception as e:
-        return f"<h1>Error</h1><p>{str(e)}</p>"
+    db.commit()
+    db.refresh(db_job)
+    return db_job
+
+@app.delete("/api/jobs/{job_id}", status_code=204)
+def delete_job(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    """REST: Delete a job manually (admin only)."""
+    db_job = db.query(models.Job).filter(models.Job.id == job_id).first()
+    if not db_job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    # Also delete the score if present
+    if db_job.score:
+        db.delete(db_job.score)
+        
+    db.delete(db_job)
+    db.commit()
+    return None

@@ -111,6 +111,15 @@ async def run(roles, max_per_role):
                 db.commit()
                 total_new += 1
                 print(f"  ✅ {jd['company']} → {score_data['final_score']}% scam ({len(score_data['flags'])} flags)")
+                
+                # Notify dashboard via API loopback
+                try:
+                    import requests
+                    requests.post("http://localhost:8000/api/notifications/publish", 
+                                  json={"event": "new_job", "title": jd["title"], "company": jd["company"]},
+                                  timeout=2)
+                except Exception as e:
+                    pass
             
             # Delay between roles
             if i < len(roles) - 1:

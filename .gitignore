@@ -15,3 +15,4 @@ sql_app.db
 
 # OS files
 .DS_Store
+backend/uvicorn.log
