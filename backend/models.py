@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, JSON, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, Float, JSON, ForeignKey, Boolean, Date
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -24,6 +24,13 @@ class Job(Base):
     description = Column(Text)
     role = Column(String, index=True, nullable=True)  # e.g. "Data Analyst", "Software Engineer"
     location = Column(String, index=True, nullable=True)  # e.g. "Mumbai", "Remote", "Bangalore"
+    country = Column(String, index=True, nullable=True)  # e.g. "India"
+    platform = Column(String, index=True, nullable=True)  # e.g. "Naukri"
+    job_type = Column(String, index=True, nullable=True)  # e.g. "Full Time", "Part Time", "Internship"
+    workplace_type = Column(String, index=True, nullable=True)  # e.g. "Online", "Offline", "Hybrid"
+    posted_date = Column(Date, nullable=True)
+    salary = Column(String, nullable=True)
+    skills = Column(JSON, nullable=True)  # e.g. ["Python", "SQL"]
     created_at = Column(String, default=lambda: datetime.utcnow().isoformat())
 
     score = relationship("Score", back_populates="job", uselist=False)

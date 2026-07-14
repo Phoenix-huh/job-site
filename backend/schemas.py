@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
+from datetime import date
 
 class Token(BaseModel):
     access_token: str
@@ -44,6 +45,13 @@ class JobBase(BaseModel):
     description: str
     role: Optional[str] = None
     location: Optional[str] = None
+    country: Optional[str] = None
+    platform: Optional[str] = None
+    job_type: Optional[str] = None
+    workplace_type: Optional[str] = None
+    posted_date: Optional[date] = None
+    salary: Optional[str] = None
+    skills: Optional[List[str]] = None
 
 class JobCreate(JobBase):
     pass

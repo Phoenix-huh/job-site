@@ -12,3 +12,4 @@ passlib[bcrypt]
 pyjwt
 python-multipart
 sse-starlette
+playwright-stealth

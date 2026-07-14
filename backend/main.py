@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, case
+from sqlalchemy import func, case, desc
 from typing import List, Optional
 from sse_starlette.sse import EventSourceResponse
 
@@ -12,6 +12,7 @@ import models
 import schemas
 from database import engine, get_db
 from notification import manager
+from scraper import normalize_base_role
 
 # Try to import the injector script for remote execution
 import sys
@@ -38,38 +39,98 @@ app.add_middleware(
 def get_jobs(
     role: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
+    job_type: Optional[str] = Query(None),
+    exclude_job_type: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
-    """Get jobs with eager-loaded scores. Sorted by scam score (safest first)."""
-    query = (
-        db.query(models.Job)
-        .options(joinedload(models.Job.score))  # Eager load scores in 1 query
-        .outerjoin(models.Score)                 # JOIN for ORDER BY
-    )
+    """Get jobs with eager-loaded scores. Newest-first when filtered; safest-first when unfiltered."""
+    use_recency_sort = bool(role or location or job_type or exclude_job_type)
+
+    query = db.query(models.Job).options(joinedload(models.Job.score))
+    if not use_recency_sort:
+        query = query.outerjoin(models.Score)
+
     if role:
-        query = query.filter(models.Job.role == role)
+        base_role = normalize_base_role(role)
+        raw_roles = db.query(models.Job.role).distinct().all()
+        matching_roles = [
+            r[0] for r in raw_roles
+            if r[0] and normalize_base_role(r[0]) == base_role
+        ]
+        if matching_roles:
+            query = query.filter(models.Job.role.in_(matching_roles))
+        else:
+            query = query.filter(models.Job.role == role)
     if location:
-        query = query.filter(models.Job.location == location)
-    # Sort in SQL: jobs with no score go last (treated as 100)
-    query = query.order_by(
-        case((models.Score.final_score == None, 100), else_=models.Score.final_score).asc()
-    )
+        query = query.filter(models.Job.location.ilike(f"%{location}%"))
+    if job_type:
+        query = query.filter(models.Job.job_type == job_type)
+    if exclude_job_type:
+        query = query.filter(models.Job.job_type != exclude_job_type)
+
+    if use_recency_sort:
+        # Newest posted first; tie-break on scrape time then id
+        query = query.order_by(
+            case((models.Job.posted_date == None, 1), else_=0),
+            desc(models.Job.posted_date),
+            desc(models.Job.created_at),
+            desc(models.Job.id),
+        )
+    else:
+        query = query.order_by(
+            case((models.Score.final_score == None, 100), else_=models.Score.final_score).asc(),
+            models.Job.id.asc(),
+        )
     jobs = query.offset(offset).limit(limit).all()
     return jobs
 
 @app.get("/api/roles")
 def get_roles(db: Session = Depends(get_db)):
-    """Get all available roles in the database."""
+    """Get base role names (intern/trainee suffixes merged into parent role)."""
     roles = db.query(models.Job.role).distinct().all()
-    return [r[0] for r in roles if r[0]]
+    bases = {normalize_base_role(r[0]) for r in roles if r[0]}
+    return sorted(bases)
 
 @app.get("/api/locations")
 def get_locations(db: Session = Depends(get_db)):
-    """Get all available locations in the database."""
-    locations = db.query(models.Job.location).distinct().all()
-    return sorted([loc[0] for loc in locations if loc[0]])
+    """Get all unique, clean city names from the database."""
+    import re
+    raw_locs = db.query(models.Job.location).distinct().all()
+
+    CITIES_LIST = [
+        "Mumbai", "Bangalore", "Bengaluru", "Delhi", "Hyderabad", "Ahmedabad", "Chennai", "Kolkata", "Pune",
+        "Gurgaon", "Gurugram", "Noida", "Faridabad", "Ghaziabad", "Jaipur", "Lucknow", "Nagpur", "Indore",
+        "Thane", "Bhopal", "Patna", "Vadodara", "Agra", "Nashik", "Rajkot", "Varanasi", "Amritsar",
+        "Dehradun", "Kochi", "Chandigarh", "Guwahati", "Mysore", "Bhubaneswar", "Coimbatore", "Vijayawada",
+        "Jodhpur", "Raipur", "Shimla", "Panaji", "Goa", "Pondicherry", "Puducherry", "Surat", "Visakhapatnam",
+        "Mangalore", "Hubli", "Aurangabad",
+    ]
+
+    def extract_city(raw: str) -> str:
+        if not raw:
+            return None
+        loc_lower = raw.lower()
+        if "remote" in loc_lower or "work from home" in loc_lower or "wfh" in loc_lower:
+            return "Remote"
+        for city in CITIES_LIST:
+            if city.lower() in loc_lower:
+                return "Bangalore" if city.lower() == "bengaluru" else city
+        first_segment = re.split(r'[,|/]', raw)[0].strip()
+        # If first_segment is suspiciously long (likely has company embedded), skip it
+        if first_segment and len(first_segment) <= 40:
+            return first_segment
+        return None
+
+    seen = set()
+    result = []
+    for (raw,) in raw_locs:
+        city = extract_city(raw)
+        if city and city not in seen:
+            seen.add(city)
+            result.append(city)
+    return sorted(result)
 
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):

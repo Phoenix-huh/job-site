@@ -13,7 +13,15 @@ scam_jobs = [
         "url": "https://www.naukri.com/fake-job-1",
         "email": "hr@gmail.com",
         "role": "Data Entry",
-        "description": "Earn unlimited easily! We are urgently hiring for remote jobs. We will send you a check to purchase your own equipment before you start. A small registration fee is required. Pay via cryptocurrency for registration fee."
+        "description": "Earn unlimited easily! We are urgently hiring for remote jobs. We will send you a check to purchase your own equipment before you start. A small registration fee is required. Pay via cryptocurrency for registration fee.",
+        "location": "Remote",
+        "country": "India",
+        "platform": "Naukri",
+        "job_type": "Full Time",
+        "workplace_type": "Online",
+        "posted_date": "2026-07-09",
+        "salary": "2 - 3 LPA",
+        "skills": ["Data Entry", "Typing", "Excel"]
     },
     {
         "title": "Frontend Developer",
@@ -21,7 +29,15 @@ scam_jobs = [
         "url": "https://www.naukri.com/fake-job-2",
         "email": "recruitment@yahoo.com",
         "role": "Frontend Developer",
-        "description": "100% Guaranteed Selection! Message us on telegram for your remote interview. Please send your aadhar card number and share bank details for our payroll processing system immediately before the limited time offer expires."
+        "description": "100% Guaranteed Selection! Message us on telegram for your remote interview. Please send your aadhar card number and share bank details for our payroll processing system immediately before the limited time offer expires.",
+        "location": "Mumbai",
+        "country": "India",
+        "platform": "Naukri",
+        "job_type": "Full Time",
+        "workplace_type": "Online",
+        "posted_date": "2026-07-08",
+        "salary": "15 - 20 LPA",
+        "skills": ["React", "CSS", "Javascript"]
     },
     {
         "title": "Software Engineer",
@@ -29,7 +45,15 @@ scam_jobs = [
         "url": "https://www.naukri.com/fake-job-3",
         "email": "careers@google-careers-apply.com",
         "role": "Software Engineer",
-        "description": "We are urgently hiring Software Engineers! To apply, fill this form bit.ly/google-apply and send a processed security deposit. This is a limited time offer so act now or lose. No skills required."
+        "description": "We are urgently hiring Software Engineers! To apply, fill this form bit.ly/google-apply and send a processed security deposit. This is a limited time offer so act now or lose. No skills required.",
+        "location": "Bangalore",
+        "country": "India",
+        "platform": "Naukri",
+        "job_type": "Full Time",
+        "workplace_type": "Hybrid",
+        "posted_date": "2026-07-09",
+        "salary": "30 - 45 LPA",
+        "skills": ["Java", "C++", "Algorithms"]
     },
     {
         "title": "Sales Executive",
@@ -37,7 +61,15 @@ scam_jobs = [
         "url": "https://www.naukri.com/fake-job-4",
         "email": "info@protonmail.com",
         "role": "Sales Executive",
-        "description": "💰💰💰 EARN BIG 🔥🔥🔥 Be your own boss and earn thousands daily. Build your downline. No qualification needed, anyone can apply. Eas\u200By Mo\u200Bney guaranteed! 🚀💸🚀"
+        "description": "💰💰💰 EARN BIG 🔥🔥🔥 Be your own boss and earn thousands daily. Build your downline. No qualification needed, anyone can apply. Eas\u200By Mo\u200Bney guaranteed! 🚀💸🚀",
+        "location": "Remote",
+        "country": "India",
+        "platform": "Naukri",
+        "job_type": "Part Time",
+        "workplace_type": "Online",
+        "posted_date": "2026-07-09",
+        "salary": "10 LPA",
+        "skills": ["Sales", "Communication"]
     }
 ]
 
@@ -52,7 +84,15 @@ def inject_scams():
                 url=jd["url"],
                 email=jd["email"],
                 role=jd["role"],
-                description=jd["description"]
+                description=jd["description"],
+                location=jd["location"],
+                country=jd["country"],
+                platform=jd["platform"],
+                job_type=jd["job_type"],
+                workplace_type=jd["workplace_type"],
+                posted_date=jd["posted_date"],
+                salary=jd["salary"],
+                skills=jd["skills"]
             )
             db.add(job_db)
             db.commit()
