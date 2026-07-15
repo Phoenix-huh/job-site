@@ -1549,6 +1549,9 @@ body {
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 .nav-tab-btn:hover {
   color: var(--dark);

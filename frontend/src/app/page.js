@@ -481,6 +481,9 @@ export default function Home() {
         <div className="nav-tabs">
           <button className={`nav-tab-btn ${viewMode === 'threat' ? 'active' : ''}`} onClick={() => setViewMode('threat')}>Threat Scanner</button>
           <button className={`nav-tab-btn ${viewMode === 'insights' ? 'active' : ''}`} onClick={() => setViewMode('insights')}>Data Insights</button>
+          {viewMode === 'threat' && (
+            <a href="#tool" className="nav-tab-btn" onClick={(e) => { e.preventDefault(); document.getElementById('tool')?.scrollIntoView({ behavior: 'smooth' }); }}>Search Jobs</a>
+          )}
         </div>
         <button
           className={`nav-burger ${menuOpen ? "open" : ""}`}
