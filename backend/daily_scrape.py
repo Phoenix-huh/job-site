@@ -8,6 +8,7 @@ import asyncio
 import sys
 import os
 import argparse
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -71,7 +72,23 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
     total_new = 0
     total_skipped = 0
     listing_type = "internships" if internships else "jobs"
-    
+
+    # ── Cleanup: delete jobs older than 90 days ──
+    try:
+        cutoff = date.today() - timedelta(days=90)
+        stale_jobs = db.query(models.Job).filter(models.Job.posted_date != None, models.Job.posted_date < cutoff).all()
+        if stale_jobs:
+            stale_ids = [j.id for j in stale_jobs]
+            db.query(models.Score).filter(models.Score.job_id.in_(stale_ids)).delete(synchronize_session="fetch")
+            db.query(models.Job).filter(models.Job.id.in_(stale_ids)).delete(synchronize_session="fetch")
+            db.commit()
+            print(f"[CLEANUP] Deleted {len(stale_jobs)} {listing_type} older than {cutoff.isoformat()}")
+        else:
+            print(f"[CLEANUP] No {listing_type} older than 90 days found.")
+    except Exception as e:
+        db.rollback()
+        print(f"[CLEANUP] Failed: {e}")
+
     try:
         for i, role in enumerate(roles):
             base_role = normalize_base_role(role)

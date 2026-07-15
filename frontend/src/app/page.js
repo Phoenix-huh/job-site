@@ -207,17 +207,25 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRole, activeLocation, activeTab]);
 
-  /* ─── Tool reveal observer ─── */
+  /* ─── Tool reveal: show job results when the tool section is in view or user is filtering ─── */
   useEffect(() => {
     const el = toolRef.current;
     if (!el) return;
     const obs = new IntersectionObserver(
       ([e]) => { if (e.isIntersecting) setToolRevealed(true); },
-      { threshold: 0.1 }
+      { threshold: 0.05, rootMargin: "200px 0px" }
     );
     obs.observe(el);
+    if (window.location.hash === "#tool") setToolRevealed(true);
     return () => obs.disconnect();
   }, []);
+
+  // Show results as soon as user picks a filter (don't wait for scroll)
+  useEffect(() => {
+    if (activeRole || activeLocation || jobs.length > 0 || loading) {
+      setToolRevealed(true);
+    }
+  }, [activeRole, activeLocation, jobs.length, loading]);
 
   /* ─── Dial scroll listener (scroll-driven rotation) ─── */
   useEffect(() => {
@@ -393,14 +401,33 @@ export default function Home() {
     "ability", "understanding", "knowledge", "candidate", "profile", "job", "role", "position",
     "company", "team", "department",
   ]);
+  const toTitleCase = (s) => s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+  const isRoleVariant = (skillLower, roleLower) => {
+    if (!roleLower) return false;
+    const roleWords = roleLower.split(/\s+/);
+    const skillWords = skillLower.split(/\s+/);
+    if (skillLower === roleLower) return true;
+    if (skillWords.length >= roleWords.length) return false;
+    const stemOf = (w) => w.replace(/(?:ing|tion|ics|ous|ive|al|ly|ment|ence|ance|ist|ery|ity)$/, '');
+    const roleStems = roleWords.map(stemOf);
+    const skillStems = skillWords.map(stemOf);
+    if (skillStems.length > roleStems.length) return false;
+    return skillStems.every((ss, i) => roleStems.some(rs => ss === rs || rs.startsWith(ss) || ss.startsWith(rs)));
+  };
+
   const skillCounts = {};
   filteredInsightsJobs.forEach(job => {
     if (job.skills && Array.isArray(job.skills)) {
+      const roleLower = (job.role || '').toLowerCase();
       job.skills.forEach(skill => {
-        const cleanSkill = skill.trim();
-        if (cleanSkill && !SKILL_BLACKLIST.has(cleanSkill.toLowerCase())) {
-          skillCounts[cleanSkill] = (skillCounts[cleanSkill] || 0) + 1;
-        }
+        const trimmed = skill.trim();
+        if (!trimmed) return;
+        const lower = trimmed.toLowerCase();
+        if (SKILL_BLACKLIST.has(lower)) return;
+        if (isRoleVariant(lower, roleLower)) return;
+        const normalized = toTitleCase(trimmed);
+        skillCounts[normalized] = (skillCounts[normalized] || 0) + 1;
       });
     }
   });
@@ -787,7 +814,7 @@ export default function Home() {
                   </div>
                 </Reveal>
 
-                {toolRevealed && (
+                {(toolRevealed || activeRole || activeLocation || jobs.length > 0 || loading) && (
                   <>
                     {loading && jobs.length === 0 ? (
                       <div className="empty-state">Loading...</div>
