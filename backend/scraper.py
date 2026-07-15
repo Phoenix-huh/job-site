@@ -13,17 +13,20 @@ from bs4 import BeautifulSoup
 from playwright_stealth import Stealth
 
 
-async def get_search_results(page, role, location="", max_jobs=10, max_pages=15):
+async def get_search_results(page, role, location="", max_jobs=10, max_pages=15, existing_urls=None):
     """Get list of job URLs + basic info from search results pages (supports pagination)."""
+    if existing_urls is None:
+        existing_urls = set()
     if location:
         slug = f"{role.replace(' ', '-').lower()}-jobs-in-{location.replace(' ', '-').lower()}"
     else:
         slug = f"{role.replace(' ', '-').lower()}-jobs"
     
     all_cards = []
+    new_count = 0
     page_num = 1
     
-    while len(all_cards) < max_jobs and page_num <= max_pages:
+    while new_count < max_jobs and page_num <= max_pages:
         url = f"https://www.naukri.com/{slug}" if page_num == 1 else f"https://www.naukri.com/{slug}-{page_num}"
         print(f"  Loading search page {page_num}: {url}")
         
@@ -118,18 +121,22 @@ async def get_search_results(page, role, location="", max_jobs=10, max_pages=15)
             print(f"  [SKIP] Not a {role} role: {card.get('title', '')}")
 
         for card in matched:
+            if card.get("url") in existing_urls:
+                print(f"  [DUP] Skipping known URL: {card.get('title', '')}")
+                continue
             if not any(c.get("url") == card["url"] for c in all_cards):
                 all_cards.append(card)
-                if len(all_cards) >= max_jobs:
+                new_count += 1
+                if new_count >= max_jobs:
                     break
         
-        if len(all_cards) >= max_jobs:
+        if new_count >= max_jobs:
             break
             
         page_num += 1
         await asyncio.sleep(random.uniform(4, 8))
         
-    return all_cards[:max_jobs]
+    return all_cards[:new_count]
 
 async def get_job_description(page, url):
     """Load individual job page and extract full description."""
@@ -544,8 +551,10 @@ def parse_relative_date(relative_str: str) -> str:
 
     return datetime.today().strftime('%Y-%m-%d')
 
-async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 10):
+async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
     """Main scraping function. Returns list of job dicts."""
+    if existing_urls is None:
+        existing_urls = set()
     jobs = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -574,7 +583,7 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
         await asyncio.sleep(3)
         
         # Get search results
-        cards = await get_search_results(page, search_query, location, max_jobs)
+        cards = await get_search_results(page, search_query, location, max_jobs, existing_urls=existing_urls)
         print(f"  Found {len(cards)} listings for {search_query} in {location or 'India'}")
         
         for i, card in enumerate(cards):
@@ -668,14 +677,17 @@ async def _safe_goto(page, url, timeout=60000):
         return False
 
 
-async def get_indeed_search_results(page, role, location="", max_jobs=10, max_pages=15):
+async def get_indeed_search_results(page, role, location="", max_jobs=10, max_pages=15, existing_urls=None):
+    if existing_urls is None:
+        existing_urls = set()
     all_cards = []
+    new_count = 0
     start_offset = 0
     cf_failures = 0
     MAX_CF_FAILS = 3
     pages_fetched = 0
 
-    while len(all_cards) < max_jobs and pages_fetched < max_pages:
+    while new_count < max_jobs and pages_fetched < max_pages:
         params = {"q": role}
         if location:
             params["l"] = location
@@ -779,20 +791,25 @@ async def get_indeed_search_results(page, role, location="", max_jobs=10, max_pa
 
         for card in matched:
             cid = card.get("jk") or card.get("url")
+            card_url = card.get("url", "")
+            if card_url in existing_urls:
+                print(f"  [DUP] Skipping known URL: {card.get('title', '')}")
+                continue
             if not any((c.get("jk") or c.get("url")) == cid for c in all_cards):
                 all_cards.append(card)
-                if len(all_cards) >= max_jobs:
+                new_count += 1
+                if new_count >= max_jobs:
                     break
 
-        print(f"  Collected {len(all_cards)} matching jobs so far...")
-        if len(all_cards) >= max_jobs:
+        print(f"  Collected {new_count} new matching jobs so far...")
+        if new_count >= max_jobs:
             break
 
         start_offset += 10
         pages_fetched += 1
         await _human_delay(4, 8)
 
-    return all_cards[:max_jobs]
+    return all_cards[:new_count]
 
 
 async def get_indeed_job_description(page, url):
@@ -822,8 +839,10 @@ async def get_indeed_job_description(page, url):
         return ""
 
 
-async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10):
+async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
     """Scrape in.indeed.com for job listings. Returns list of job dicts."""
+    if existing_urls is None:
+        existing_urls = set()
     jobs = []
 
     async with async_playwright() as p:
@@ -860,7 +879,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             print("  [WARN] Homepage warm-up failed.")
 
         # Scrape search results
-        cards = await get_indeed_search_results(page, search_query, location, max_jobs)
+        cards = await get_indeed_search_results(page, search_query, location, max_jobs, existing_urls=existing_urls)
         print(f"  Found {len(cards)} listings for '{search_query}' in '{location or 'India'}'")
 
         # Fetch full descriptions

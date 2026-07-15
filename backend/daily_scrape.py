@@ -97,18 +97,25 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
             print(f"[{i+1}/{len(roles)}] Scraping {listing_type}: {base_role}")
             print(f"  Search query: {search_query}")
             print(f"{'='*50}")
+
+            existing_urls = set(row[0] for row in db.query(models.Job.url).all() if row[0])
+            print(f"  [DB] {len(existing_urls)} existing job URLs in database")
             
             try:
                 jobs = []
                 p_lower = platform.lower()
                 if p_lower in ("naukri", "all"):
                     print(f"  [Scraping Naukri] query={search_query}, location={city}")
-                    n_jobs = await scrape_naukri(search_query, location=city, max_jobs=max_per_role)
+                    n_jobs = await scrape_naukri(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls)
                     jobs.extend(n_jobs)
+                    for j in n_jobs:
+                        existing_urls.add(j["url"])
                 if p_lower in ("indeed", "all"):
                     print(f"  [Scraping Indeed] query={search_query}, location={city}")
-                    i_jobs = await scrape_indeed(search_query, location=city, max_jobs=max_per_role)
+                    i_jobs = await scrape_indeed(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls)
                     jobs.extend(i_jobs)
+                    for j in i_jobs:
+                        existing_urls.add(j["url"])
             except Exception as e:
                 print(f"  [ERROR] Scrape failed for {base_role}: {e}")
                 continue
@@ -119,13 +126,6 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                     total_skipped += 1
                     continue
 
-                # Skip duplicates
-                existing = db.query(models.Job).filter(models.Job.url == jd["url"]).first()
-                if existing:
-                    total_skipped += 1
-                    continue
-                
-                # Save job — always store the base role name
                 stored_job_type = jd.get("job_type")
                 if internships:
                     stored_job_type = "Internship"
