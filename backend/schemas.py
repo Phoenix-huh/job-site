@@ -63,3 +63,21 @@ class JobOut(JobBase):
 
     class Config:
         from_attributes = True
+
+class UserJobInteractionBase(BaseModel):
+    job_id: int
+    applied: bool = False
+    rejected: bool = False
+
+class UserJobInteractionCreate(BaseModel):
+    job_id: int
+    applied: Optional[bool] = None
+    rejected: Optional[bool] = None
+
+class UserJobInteractionOut(UserJobInteractionBase):
+    id: int
+    user_id: str
+    created_at: str
+
+    class Config:
+        from_attributes = True

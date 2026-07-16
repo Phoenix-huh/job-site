@@ -269,3 +269,58 @@ def delete_job(job_id: int, db: Session = Depends(get_db), current_user: models.
     db.delete(db_job)
     db.commit()
     return None
+
+# --- User-Job Interactions (Authenticated via Supabase) ---
+
+@app.get("/api/interactions", response_model=List[schemas.UserJobInteractionOut])
+def get_interactions(user_id: str = Query(...), db: Session = Depends(get_db)):
+    rows = db.query(models.UserJobInteraction).filter(models.UserJobInteraction.user_id == user_id).all()
+    return rows
+
+@app.get("/api/interactions/applied", response_model=List[schemas.JobOut])
+def get_applied_jobs(user_id: str = Query(...), db: Session = Depends(get_db)):
+    interactions = db.query(models.UserJobInteraction).filter(
+        models.UserJobInteraction.user_id == user_id,
+        models.UserJobInteraction.applied == True,
+    ).all()
+    job_ids = [i.job_id for i in interactions]
+    if not job_ids:
+        return []
+    return db.query(models.Job).options(joinedload(models.Job.score)).filter(models.Job.id.in_(job_ids)).all()
+
+@app.post("/api/interactions", response_model=schemas.UserJobInteractionOut)
+def upsert_interaction(payload: schemas.UserJobInteractionCreate, user_id: str = Query(...), db: Session = Depends(get_db)):
+    existing = db.query(models.UserJobInteraction).filter(
+        models.UserJobInteraction.user_id == user_id,
+        models.UserJobInteraction.job_id == payload.job_id,
+    ).first()
+    if existing:
+        if payload.applied is not None:
+            existing.applied = payload.applied
+        if payload.rejected is not None:
+            existing.rejected = payload.rejected
+        db.commit()
+        db.refresh(existing)
+        return existing
+    row = models.UserJobInteraction(
+        user_id=user_id,
+        job_id=payload.job_id,
+        applied=payload.applied or False,
+        rejected=payload.rejected or False,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+@app.delete("/api/interactions/{interaction_id}", status_code=204)
+def delete_interaction(interaction_id: int, user_id: str = Query(...), db: Session = Depends(get_db)):
+    row = db.query(models.UserJobInteraction).filter(
+        models.UserJobInteraction.id == interaction_id,
+        models.UserJobInteraction.user_id == user_id,
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    db.delete(row)
+    db.commit()
+    return None

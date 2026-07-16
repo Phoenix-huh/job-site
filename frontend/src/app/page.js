@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useAuth } from "@/lib/auth";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -126,6 +127,7 @@ const THREAT_PARAMS = [
    ═══════════════════════════════════════ */
 export default function Home() {
   /* ─── State ─── */
+  const { user } = useAuth();
   const [entered, setEntered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
@@ -147,6 +149,12 @@ export default function Home() {
   const [insightsCity, setInsightsCity] = useState("");
   const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'internships'
   const [searchQuery, setSearchQuery] = useState('');
+  const [interactions, setInteractions] = useState({});
+  const [dashRole, setDashRole] = useState('');
+  const [dashLocation, setDashLocation] = useState('');
+  const [dashSearch, setDashSearch] = useState('');
+  const [dashSelectedJob, setDashSelectedJob] = useState(null);
+  const [dashAppliedJobs, setDashAppliedJobs] = useState([]);
 
   const toolRef = useRef(null);
   const dialRef = useRef(null);
@@ -170,7 +178,134 @@ export default function Home() {
       fetch(`${API}/api/jobs?limit=10000`).then(r => r.json()).then((data) => setAllJobs(dedupeJobs(Array.isArray(data) ? data : []))).catch(() => { });
       fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => { });
     }
-  }, [viewMode]);
+    if (viewMode === 'dashboard' && !user) setViewMode('threat');
+  }, [viewMode, user]);
+
+  // Fetch user interactions when logged in
+  useEffect(() => {
+    if (!user) { setInteractions({}); return; }
+    console.log("[ShieldDB] Fetching interactions for user:", user.id);
+    fetch(`${API}/api/interactions?user_id=${encodeURIComponent(user.id)}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        console.log("[ShieldDB] Interactions loaded:", Array.isArray(data) ? data.length : 0, "records");
+        const map = {};
+        (Array.isArray(data) ? data : []).forEach(i => { map[i.job_id] = i; });
+        setInteractions(map);
+      })
+      .catch((e) => {
+        console.error("[ShieldDB] Failed to fetch interactions:", e);
+      });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || viewMode !== 'dashboard') return;
+    console.log("[ShieldDB] Fetching applied jobs for dashboard, user_id:", user.id);
+    fetch(`${API}/api/interactions/applied?user_id=${encodeURIComponent(user.id)}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        const jobs = Array.isArray(data) ? data : [];
+        console.log("[ShieldDB] Dashboard: loaded", jobs.length, "applied jobs");
+        setDashAppliedJobs(jobs);
+      })
+      .catch((e) => {
+        console.error("[ShieldDB] Failed to fetch applied jobs:", e);
+        setDashAppliedJobs([]);
+      });
+  }, [user, viewMode, interactions]);
+
+  const dashJobs = dashAppliedJobs.filter(job => {
+    const interaction = interactions[job.id];
+    if (!interaction?.applied) return false;
+    if (interaction.rejected) return false;
+    const q = dashSearch.toLowerCase();
+    const textMatch = !q || job.title.toLowerCase().includes(q) || job.company.toLowerCase().includes(q) || (job.location && job.location.toLowerCase().includes(q));
+    const roleMatch = !dashRole || normalizeBaseRole(job.role) === dashRole;
+    const locMatch = !dashLocation || (job.location && job.location.toLowerCase().includes(dashLocation.toLowerCase()));
+    return textMatch && roleMatch && locMatch;
+  });
+
+  useEffect(() => {
+    if (dashSelectedJob && !dashJobs.some(j => j.id === dashSelectedJob.id)) {
+      setDashSelectedJob(dashJobs[0] || null);
+    }
+  }, [dashJobs, dashSelectedJob]);
+
+  const toggleApplied = async (jobId) => {
+    if (!user) {
+      console.warn("[ShieldDB] toggleApplied: no user logged in");
+      return;
+    }
+    const current = interactions[jobId];
+    const newVal = !(current?.applied);
+    console.log(`[ShieldDB] toggleApplied: job_id=${jobId}, user_id=${user.id}, new_value=${newVal}`);
+
+    setInteractions(prev => ({
+      ...prev,
+      [jobId]: { ...prev[jobId], job_id: jobId, applied: newVal, rejected: prev[jobId]?.rejected || false },
+    }));
+
+    try {
+      const res = await fetch(`${API}/api/interactions?user_id=${encodeURIComponent(user.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: jobId, applied: newVal }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[ShieldDB] toggleApplied failed: HTTP ${res.status}`, errText);
+        setInteractions(prev => ({ ...prev, [jobId]: current }));
+        return;
+      }
+      const data = await res.json();
+      console.log("[ShieldDB] toggleApplied saved:", data);
+      setInteractions(prev => ({ ...prev, [jobId]: data }));
+    } catch (e) {
+      console.error("[ShieldDB] toggleApplied network error:", e);
+      setInteractions(prev => ({ ...prev, [jobId]: current }));
+    }
+  };
+
+  const toggleRejected = async (jobId) => {
+    if (!user) {
+      console.warn("[ShieldDB] toggleRejected: no user logged in");
+      return;
+    }
+    const current = interactions[jobId];
+    const newVal = !(current?.rejected);
+    console.log(`[ShieldDB] toggleRejected: job_id=${jobId}, user_id=${user.id}, new_value=${newVal}`);
+
+    setInteractions(prev => ({
+      ...prev,
+      [jobId]: { ...prev[jobId], job_id: jobId, rejected: newVal, applied: prev[jobId]?.applied || false },
+    }));
+
+    try {
+      const res = await fetch(`${API}/api/interactions?user_id=${encodeURIComponent(user.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: jobId, rejected: newVal }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[ShieldDB] toggleRejected failed: HTTP ${res.status}`, errText);
+        setInteractions(prev => ({ ...prev, [jobId]: current }));
+        return;
+      }
+      const data = await res.json();
+      console.log("[ShieldDB] toggleRejected saved:", data);
+      setInteractions(prev => ({ ...prev, [jobId]: data }));
+    } catch (e) {
+      console.error("[ShieldDB] toggleRejected network error:", e);
+      setInteractions(prev => ({ ...prev, [jobId]: current }));
+    }
+  };
 
   // Pre-fetch jobs immediately and on filter changes
   const fetchJobs = useCallback((reset = true) => {
@@ -344,6 +479,9 @@ export default function Home() {
   allJobs.forEach(job => { const c = extractCity(job.location); if (c) insightsCitiesSet.add(c); });
   const insightsCities = Array.from(insightsCitiesSet).sort();
 
+  const dashRoles = [...new Set(dashAppliedJobs.filter(j => interactions[j.id]?.applied && !interactions[j.id]?.rejected).map(j => normalizeBaseRole(j.role)).filter(Boolean))].sort();
+  const dashLocations = [...new Set(dashAppliedJobs.filter(j => interactions[j.id]?.applied && !interactions[j.id]?.rejected).map(j => extractCity(j.location)).filter(Boolean))].sort();
+
   // Filtered jobs for Insights Dashboard
   const filteredInsightsJobs = allJobs.filter(job => {
     const roleMatch = !insightsRole || normalizeBaseRole(job.role) === insightsRole;
@@ -399,7 +537,11 @@ export default function Home() {
     "program", "quality", "performance", "optimization", "improvement", "strategy", "strategic",
     "planning", "process", "reporting", "report", "presentation", "good", "strong", "excellent",
     "ability", "understanding", "knowledge", "candidate", "profile", "job", "role", "position",
-    "company", "team", "department",
+    "company", "team", "department", "accounting", "backend development", "business analysis", "business analytics",
+    "data analysis", "data analytics", "content writing", "cyber security", "analytical", "front end", "frontend development",
+    "graphic designing", "network engineering", "product management", "project management", "system administration", "translation", "video editing", "adobe",
+    "quality analysis",
+
   ]);
   const toTitleCase = (s) => s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
@@ -481,8 +623,16 @@ export default function Home() {
         <div className="nav-tabs">
           <button className={`nav-tab-btn ${viewMode === 'threat' ? 'active' : ''}`} onClick={() => setViewMode('threat')}>Threat Scanner</button>
           <button className={`nav-tab-btn ${viewMode === 'insights' ? 'active' : ''}`} onClick={() => setViewMode('insights')}>Data Insights</button>
+          {user && (
+            <button className={`nav-tab-btn ${viewMode === 'dashboard' ? 'active' : ''}`} onClick={() => setViewMode('dashboard')}>Dashboard</button>
+          )}
           {viewMode === 'threat' && (
             <a href="#tool" className="nav-tab-btn" onClick={(e) => { e.preventDefault(); document.getElementById('tool')?.scrollIntoView({ behavior: 'smooth' }); }}>Search Jobs</a>
+          )}
+          {user ? (
+            <button className="nav-tab-btn" onClick={async () => { const { supabase } = await import("@/lib/supabase"); supabase.auth.signOut(); }} style={{ marginLeft: 'auto' }}>Log Out</button>
+          ) : (
+            <a href="/login" className="nav-tab-btn" style={{ marginLeft: 'auto' }}>Log In</a>
           )}
         </div>
         <button
@@ -498,14 +648,22 @@ export default function Home() {
       <div className={`nav-overlay ${menuOpen ? "open" : ""}`}>
         <a href="#" onClick={(e) => { e.preventDefault(); setViewMode('threat'); setMenuOpen(false); }}>Threat Scanner</a>
         <a href="#" onClick={(e) => { e.preventDefault(); setViewMode('insights'); setMenuOpen(false); }}>Data Insights</a>
+        {user && (
+          <a href="#" onClick={(e) => { e.preventDefault(); setViewMode('dashboard'); setMenuOpen(false); }}>Dashboard</a>
+        )}
         {viewMode === 'threat' && (
           <>
             <a href="#tool" onClick={() => setMenuOpen(false)}>Search Jobs</a>
           </>
         )}
+        {user ? (
+          <a href="#" onClick={async (e) => { e.preventDefault(); const { supabase } = await import("@/lib/supabase"); supabase.auth.signOut(); setMenuOpen(false); }}>Log Out</a>
+        ) : (
+          <a href="/login" onClick={() => setMenuOpen(false)}>Log In</a>
+        )}
       </div>
 
-      {viewMode === 'threat' ? (
+      {viewMode === 'threat' && (
         <>
           {/* ═══════════ INTRO HERO ═══════════ */}
           <section
@@ -852,6 +1010,9 @@ export default function Home() {
                                         <div className={`job-card-badge badge-${info.cls}`}>
                                           {info.label}
                                         </div>
+                                        {user && interactions[job.id]?.applied && (
+                                          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10b981', marginLeft: '4px' }}>✓</span>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -886,6 +1047,22 @@ export default function Home() {
                                       );
                                     })()}
                                   </div>
+                                  {user && selectedJob && (
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                      <button
+                                        className={`interaction-btn interaction-btn--apply ${interactions[selectedJob.id]?.applied ? 'active' : ''}`}
+                                        onClick={(e) => { e.stopPropagation(); toggleApplied(selectedJob.id); }}
+                                      >
+                                        {interactions[selectedJob.id]?.applied ? '✓ Applied' : 'Mark as Applied'}
+                                      </button>
+                                      <button
+                                        className={`interaction-btn interaction-btn--reject ${interactions[selectedJob.id]?.rejected ? 'active' : ''}`}
+                                        onClick={(e) => { e.stopPropagation(); toggleRejected(selectedJob.id); }}
+                                      >
+                                        {interactions[selectedJob.id]?.rejected ? '✗ Rejected' : 'Reject'}
+                                      </button>
+                                    </div>
+                                  )}
                                   {selectedJob.description && (
                                     <div className="detail-description">
                                       {selectedJob.description}
@@ -944,8 +1121,9 @@ export default function Home() {
             </div>
           </section>
         </>
-      ) : (
-        /* ═══════════ DATA INSIGHTS DASHBOARD ═══════════ */
+      )}
+
+      {viewMode === 'insights' && (
         <section className="insights-section">
           <div className="insights-header">
             <h1 className="insights-title">Job Market Insights</h1>
@@ -1241,6 +1419,153 @@ export default function Home() {
               )}
             </div>
           )}
+        </section>
+      )}
+
+      {viewMode === 'dashboard' && user && (
+        <section className="insights-section">
+          <div className="insights-header">
+            <h1 className="insights-title">Your Dashboard</h1>
+            <p className="insights-subtitle">Jobs you&apos;ve marked as applied — filter and track your applications</p>
+          </div>
+
+          <div className="slicers-card">
+            <div className="slicers-title">Filters</div>
+            <div className="slicers-grid">
+              <div className="slicer-field">
+                <label className="slicer-label">Position</label>
+                <select className="slicer-select" value={dashRole} onChange={(e) => setDashRole(e.target.value)}>
+                  <option value="">All Positions ({dashRoles.length})</option>
+                  {dashRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="slicer-field">
+                <label className="slicer-label">Location</label>
+                <select className="slicer-select" value={dashLocation} onChange={(e) => setDashLocation(e.target.value)}>
+                  <option value="">All Locations ({dashLocations.length})</option>
+                  {dashLocations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                </select>
+              </div>
+              <div className="slicer-field">
+                <label className="slicer-label">Search</label>
+                <div className="search-wrap" style={{ maxWidth: '100%' }}>
+                  <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input type="text" className="search-input" placeholder="Search applied jobs..." value={dashSearch} onChange={(e) => setDashSearch(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '0 32px', marginTop: '24px' }}>
+            {dashAppliedJobs.filter(j => interactions[j.id]?.applied && !interactions[j.id]?.rejected).length === 0 ? (
+              <div className="chart-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                <p style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-muted)' }}>You haven&apos;t applied to any jobs yet!</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '8px' }}>Head over to Search Jobs, find listings you like, and mark them as applied.</p>
+                <button className="nav-tab-btn" style={{ marginTop: '16px', background: 'rgba(225,90,68,0.08)', color: 'var(--coral)' }} onClick={() => setViewMode('threat')}>Go to Search Jobs</button>
+              </div>
+            ) : dashJobs.length === 0 ? (
+              <div className="chart-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                <p style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-muted)' }}>No applied jobs match your current filters</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '8px' }}>Try adjusting your search or filter criteria.</p>
+                <button className="nav-tab-btn" style={{ marginTop: '16px', background: 'rgba(0,0,0,0.04)' }} onClick={() => { setDashSearch(''); setDashRole(''); setDashLocation(''); }}>Clear Filters</button>
+              </div>
+            ) : (
+              <div className="results-grid">
+                <div className="job-list-col">
+                  <div className="job-list custom-scrollbar">
+                    {dashJobs.map((job) => {
+                      const info = si(job.score);
+                      const active = dashSelectedJob?.id === job.id;
+                      return (
+                        <div key={job.id} onClick={() => setDashSelectedJob(job)} className={`job-card ${active ? "job-card-active" : ""}`}>
+                          <div className="job-card-inner">
+                            <div className={`score-ring ${info.cls}`}>
+                              <span className="score-num">{job.score ? `${Math.round(job.score.final_score)}%` : "—"}</span>
+                            </div>
+                            <div className="job-card-text">
+                              <p className="job-card-title">{job.title}</p>
+                              <p className="job-card-company">{job.company}{job.location && <span className="job-card-location"> · 📍 {job.location}</span>}</p>
+                            </div>
+                            <div className={`job-card-badge badge-${info.cls}`}>
+                              {info.label}
+                            </div>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10b981', marginLeft: '4px' }}>✓</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="detail-col">
+                  {dashSelectedJob ? (
+                    <div className="detail-panel">
+                      <div className="detail-header">
+                        <div className="detail-header-text">
+                          <h2 className="detail-title">{dashSelectedJob.title}</h2>
+                          <div className="detail-meta">
+                            <span className="detail-company">{dashSelectedJob.company}</span>
+                            {dashSelectedJob.location && <span className="detail-location-badge">📍 {dashSelectedJob.location}</span>}
+                            {dashSelectedJob.url && <a href={dashSelectedJob.url} target="_blank" rel="noreferrer" className="detail-link">View Original ↗</a>}
+                          </div>
+                        </div>
+                        {dashSelectedJob.score && (() => {
+                          const info = si(dashSelectedJob.score);
+                          return (
+                            <div className="detail-score-wrap">
+                              <div className={`score-ring big ${info.cls}`}><span className="score-num">{Math.round(dashSelectedJob.score.final_score)}%</span></div>
+                              <span className="detail-score-label">SCAM SCORE</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                        <button
+                          className={`interaction-btn interaction-btn--apply ${interactions[dashSelectedJob.id]?.applied ? 'active' : ''}`}
+                          onClick={() => toggleApplied(dashSelectedJob.id)}
+                        >
+                          {interactions[dashSelectedJob.id]?.applied ? '✓ Applied' : 'Mark as Applied'}
+                        </button>
+                        <button
+                          className={`interaction-btn interaction-btn--reject ${interactions[dashSelectedJob.id]?.rejected ? 'active' : ''}`}
+                          onClick={() => toggleRejected(dashSelectedJob.id)}
+                        >
+                          {interactions[dashSelectedJob.id]?.rejected ? '✗ Rejected' : 'Reject'}
+                        </button>
+                      </div>
+                      {dashSelectedJob.description && (
+                        <div className="detail-description">{dashSelectedJob.description}</div>
+                      )}
+                      {dashSelectedJob.score && (
+                        <div className="detail-body">
+                          <div>
+                            <h4 className="signals-heading">THREAT SIGNALS ({dashSelectedJob.score.flags.length})</h4>
+                            <div className="signals-list">
+                              {dashSelectedJob.score.flags.map((raw, i) => {
+                                let sev = "warn", lbl = "WARN", text = raw;
+                                if (raw.startsWith("CRIT:")) { sev = "crit"; lbl = "CRIT"; text = raw.slice(6); }
+                                else if (raw.startsWith("SAFE:")) { sev = "safe"; lbl = "SAFE"; text = raw.slice(6); }
+                                else if (raw.startsWith("WARN:")) { text = raw.slice(6); }
+                                return (
+                                  <div key={i} className={`flag-pill flag-${sev}`}>
+                                    <span className="flag-badge">{lbl}</span>
+                                    <span className="flag-text">{text}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="detail-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      Select a job to view details
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </section>
       )}
 

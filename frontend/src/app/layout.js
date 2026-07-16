@@ -6,6 +6,7 @@ export const metadata = {
 };
 
 import { NotificationToast } from "@/components/NotificationToast";
+import { AuthProvider } from "@/lib/auth";
 
 export default function RootLayout({ children }) {
   return (
@@ -16,8 +17,10 @@ export default function RootLayout({ children }) {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <NotificationToast />
-        {children}
+        <AuthProvider>
+          <NotificationToast />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

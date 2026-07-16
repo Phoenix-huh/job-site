@@ -50,3 +50,44 @@ CREATE INDEX IF NOT EXISTS idx_jobs_platform ON jobs(platform);
 CREATE INDEX IF NOT EXISTS idx_jobs_job_type ON jobs(job_type);
 CREATE INDEX IF NOT EXISTS idx_jobs_workplace_type ON jobs(workplace_type);
 CREATE INDEX IF NOT EXISTS idx_scores_job_id ON scores(job_id);
+
+-- ──────────────────────────────────────────────────────────
+-- USER-JOB INTERACTIONS (Supabase RLS-protected)
+-- ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS user_job_interactions (
+    id SERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    applied BOOLEAN DEFAULT FALSE,
+    rejected BOOLEAN DEFAULT FALSE,
+    created_at VARCHAR(255) DEFAULT TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS'),
+    UNIQUE(user_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_interactions_user_id ON user_job_interactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_interactions_job_id ON user_job_interactions(job_id);
+
+-- Enable Row Level Security
+ALTER TABLE user_job_interactions ENABLE ROW LEVEL SECURITY;
+
+-- Users can only see and modify their own interactions
+CREATE POLICY "Users can view own interactions"
+    ON user_job_interactions FOR SELECT
+    USING (user_id = auth.uid());
+
+CREATE POLICY "Users can insert own interactions"
+    ON user_job_interactions FOR INSERT
+    WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can update own interactions"
+    ON user_job_interactions FOR UPDATE
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Users can delete own interactions"
+    ON user_job_interactions FOR DELETE
+    USING (user_id = auth.uid());
+
+-- Service-role bypass (for backend API running with SERVICE_ROLE key)
+-- No policy needed — the service_role key circumvents RLS by default.
