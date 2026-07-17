@@ -1,5 +1,5 @@
 """
-Naukri Scraper — uses non-headless Playwright to bypass bot detection.
+Naukri Scraper — uses Playwright to bypass bot detection.
 Extracts job listings from search results pages and individual JD pages.
 """
 import asyncio
@@ -198,7 +198,12 @@ ROLE_SUFFIX_WORDS = {
     "joiners", "wanted", "required", "looking", "for", "the", "and", "or",
 }
 
-INTERN_SIGNALS = ("intern", "internship", "trainee", "apprentice")
+INTERN_SIGNALS = ("intern", "internship", "trainee", "apprentice", "co-op", "coop")
+
+SENIORITY_CONFLICT_TERMS = {
+    "senior", "lead", "manager", "director", "principal",
+    "staff", "vp", "head", "chief", "sr.", "sr",
+}
 
 ROLE_KEEP_SHORT = {"ui", "ux", "hr", "qa", "ai", "ml", "go", "r", "it"}
 
@@ -253,6 +258,12 @@ def title_matches_search(title: str, search_query: str) -> bool:
     # Full-time searches should skip internship listings
     if not query_is_intern and title_is_intern:
         return False
+    # Internship searches should reject senior-level titles
+    if query_is_intern:
+        title_words = set(title_norm.split())
+        for term in SENIORITY_CONFLICT_TERMS:
+            if term in title_words:
+                return False
 
     keywords = extract_role_keywords(search_query)
     if not keywords:
@@ -551,6 +562,107 @@ def parse_relative_date(relative_str: str) -> str:
 
     return datetime.today().strftime('%Y-%m-%d')
 
+
+def parse_linkedin_date(raw: str) -> str:
+    """Parse LinkedIn date strings into YYYY-MM-DD.
+
+    Handles:
+      - ISO dates from <time datetime="2026-07-15">
+      - Relative strings like "2 hours ago", "3 days ago", "1 week ago"
+      - Short forms like "2h ago", "3d ago", "1w ago", "2mo ago"
+      - "Just posted", "Yesterday", "Recent", "Active X ago"
+    Falls back to today's date if nothing parses.
+    """
+    today_str = datetime.today().strftime('%Y-%m-%d')
+    if not raw or not raw.strip():
+        print(f"  [DATE] raw='' → fallback={today_str}")
+        return today_str
+
+    s = raw.strip()
+
+    iso_match = re.match(r'^(\d{4}-\d{2}-\d{2})', s)
+    if iso_match:
+        parsed = iso_match.group(1)
+        print(f"  [DATE] raw='{raw}' → iso={parsed}")
+        return parsed
+
+    low = s.lower()
+
+    prefixes = ("active ", "reposted ", "listed ")
+    for prefix in prefixes:
+        if low.startswith(prefix):
+            low = low[len(prefix):].strip()
+
+    if any(kw in low for kw in ("just posted", "just now", "today", "recently", "now")):
+        print(f"  [DATE] raw='{raw}' → today={today_str}")
+        return today_str
+
+    if "yesterday" in low:
+        parsed = (datetime.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → yesterday={parsed}")
+        return parsed
+
+    m = re.search(r'(\d+)\s*h(?:ours?)?\s+ago', low)
+    if m:
+        print(f"  [DATE] raw='{raw}' → today={today_str}")
+        return today_str
+
+    m = re.search(r'(\d+)\s*min(?:utes?|s)?\s+ago', low)
+    if m:
+        print(f"  [DATE] raw='{raw}' → today={today_str}")
+        return today_str
+
+    m = re.search(r'(\d+)\s*s(?:econds?)?\s+ago', low)
+    if m:
+        print(f"  [DATE] raw='{raw}' → today={today_str}")
+        return today_str
+
+    m = re.search(r'(\d+)\s*d(?:ays?)?\s+ago', low)
+    if m:
+        days = int(m.group(1))
+        parsed = (datetime.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → {days}d ago={parsed}")
+        return parsed
+
+    m = re.search(r'(\d+)\s*w(?:eeks?)?\s+ago', low)
+    if m:
+        weeks = int(m.group(1))
+        parsed = (datetime.today() - timedelta(weeks=weeks)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → {weeks}w ago={parsed}")
+        return parsed
+
+    m = re.search(r'(\d+)\s*mo(?:nths?)?\s+ago', low)
+    if m:
+        months = int(m.group(1))
+        parsed = (datetime.today() - timedelta(days=months * 30)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → {months}mo ago={parsed}")
+        return parsed
+
+    m = re.search(r'(\d+)\+?\s+day', low)
+    if m:
+        days = int(m.group(1))
+        parsed = (datetime.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → {days}d={parsed}")
+        return parsed
+
+    m = re.search(r'(\d+)\+?\s+week', low)
+    if m:
+        weeks = int(m.group(1))
+        parsed = (datetime.today() - timedelta(weeks=weeks)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → {weeks}w={parsed}")
+        return parsed
+
+    m = re.search(r'(\d+)\+?\s+month', low)
+    if m:
+        months = int(m.group(1))
+        parsed = (datetime.today() - timedelta(days=months * 30)).strftime('%Y-%m-%d')
+        print(f"  [DATE] raw='{raw}' → {months}mo={parsed}")
+        return parsed
+
+    print(f"  [DATE] raw='{raw}' → unparseable, fallback={today_str}")
+    return today_str
+
+
 async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
     """Main scraping function. Returns list of job dicts."""
     if existing_urls is None:
@@ -558,16 +670,17 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
     jobs = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False,
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
+                "--disable-gpu",
                 "--no-sandbox",
-                "--window-size=1440,900",
+                "--window-size=1920,1080",
             ]
         )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36",
-            viewport={"width": 1440, "height": 900},
+            viewport={"width": 1920, "height": 1080},
             locale="en-US",
         )
         await context.add_init_script("""
@@ -587,6 +700,10 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
         print(f"  Found {len(cards)} listings for {search_query} in {location or 'India'}")
         
         for i, card in enumerate(cards):
+            if not title_matches_search(card.get("title", ""), search_query):
+                print(f"  Skipping title mismatch: {card.get('title', '')}")
+                continue
+
             # Visit each job page to get full description
             if i > 0:
                 await asyncio.sleep(random.uniform(3, 6))
@@ -848,11 +965,11 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     async with async_playwright() as p:
         # Use Firefox — it has a much better Cloudflare pass-rate than Chromium
         browser = await p.firefox.launch(
-            headless=False,
-            args=["--width=1440", "--height=900"],
+            headless=True,
+            args=["--width=1920", "--height=1080"],
         )
         context = await browser.new_context(
-            viewport={"width": 1440, "height": 900},
+            viewport={"width": 1920, "height": 1080},
             locale="en-IN",
             timezone_id="Asia/Kolkata",
             geolocation={"latitude": 19.076, "longitude": 72.8777},
@@ -884,6 +1001,10 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
         # Fetch full descriptions
         for i, card in enumerate(cards):
+            if not title_matches_search(card.get("title", ""), search_query):
+                print(f"  Skipping title mismatch: {card.get('title', '')}")
+                continue
+
             if i > 0:
                 await _human_delay(3, 6)
 
@@ -914,6 +1035,293 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
                 "posted_date": parse_relative_date(card.get("posted_date", "Just Posted")),
                 "salary": "Not disclosed",
                 "skills": []
+            })
+            print(f"  [SUCCESS] [{i+1}/{len(cards)}] {card['company']}")
+
+        await browser.close()
+
+    return jobs
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn Scraper
+# ---------------------------------------------------------------------------
+
+async def _linkedin_human_delay(lo=2.0, hi=4.5):
+    await asyncio.sleep(random.uniform(lo, hi))
+
+
+async def _linkedin_slow_scroll(page, times=3):
+    for _ in range(times):
+        await page.mouse.wheel(0, random.randint(400, 800))
+        await asyncio.sleep(random.uniform(0.3, 0.6))
+
+
+async def get_linkedin_search_results(page, search_query, location="", max_jobs=10, existing_urls=None, internships=False):
+    if existing_urls is None:
+        existing_urls = set()
+    all_cards = []
+    all_seen_urls = set()
+    new_count = 0
+    start = 0
+
+    while new_count < max_jobs and start < 200:
+        params_parts = [f"keywords={urllib.parse.quote_plus(search_query)}"]
+        if location:
+            params_parts.append(f"location={urllib.parse.quote_plus(location)}")
+        if internships:
+            params_parts.append("f_E=1")
+        else:
+            params_parts.append("f_E=2%2C3%2C4%2C5")
+        if start > 0:
+            params_parts.append(f"start={start}")
+
+        url = f"https://www.linkedin.com/jobs/search/?{'&'.join(params_parts)}"
+        print(f"  Loading LinkedIn search (start={start}): {url}")
+
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+        except Exception as e:
+            print(f"  Failed to load LinkedIn page: {e}")
+            break
+
+        try:
+            await page.wait_for_selector(
+                "ul.jobs-search__results-list li, .job-search-card, .base-card",
+                timeout=15000,
+            )
+        except Exception:
+            pass
+
+        await _linkedin_slow_scroll(page, times=2)
+        await asyncio.sleep(random.uniform(1.0, 2.0))
+
+        need_more = new_count < max_jobs
+        if need_more:
+            see_more = await page.query_selector(
+                "button.infinite-scroller__show-more-button, button[aria-label*='more']"
+            )
+            if see_more:
+                try:
+                    await see_more.click()
+                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                except Exception:
+                    pass
+
+        try:
+            cards = await page.evaluate("""() => {
+                const cards = document.querySelectorAll(
+                    'ul.jobs-search__results-list li, .job-search-card, div.base-card'
+                );
+                return Array.from(cards).map(card => {
+                    const titleEl = card.querySelector('h3, .base-search-card__title, .job-search-card__title');
+                    const companyEl = card.querySelector('h4, .base-search-card__subtitle, .job-search-card__company-name');
+                    const locationEl = card.querySelector('.job-search-card__location, [class*="location"]');
+                    const linkEl = card.querySelector('a[href*="/jobs/view/"], a.base-card__full-link');
+                    // --- Posted date: try <time> with datetime attr first, then broader selectors ---
+                    let rawDate = '';
+                    const timeEl = card.querySelector('time');
+                    if (timeEl) {
+                        const dt = timeEl.getAttribute('datetime');
+                        if (dt) {
+                            rawDate = dt;
+                        } else {
+                            rawDate = timeEl.textContent.trim();
+                        }
+                    }
+                    if (!rawDate) {
+                        const dateSelectors = [
+                            '.job-search-card__listdate', '.job-search-card__listdate--new',
+                            '[class*="listdate"]', '[class*="posted-date"]',
+                            '[class*="date"]', '[class*="age"]',
+                        ];
+                        for (const sel of dateSelectors) {
+                            const el = card.querySelector(sel);
+                            if (el && el.textContent.trim()) {
+                                rawDate = el.textContent.trim();
+                                break;
+                            }
+                        }
+                    }
+                    if (!rawDate) {
+                        const datePatterns = /(\d+\s*(?:hour|minute|second|day|week|month)s?\s+ago)|(\d+[hdwmy]\b)|(just now|today|yesterday|recently)/i;
+                        const allEls = card.querySelectorAll('span, div, time, p');
+                        for (const el of allEls) {
+                            const txt = el.textContent.trim();
+                            if (txt && datePatterns.test(txt) && txt.length < 60) {
+                                rawDate = txt;
+                                break;
+                            }
+                        }
+                    }
+                    if (!rawDate) rawDate = '';
+
+                    const subtitleEls = card.querySelectorAll('.job-search-card__subtitle, .base-search-card__metadata');
+                    let salary = '';
+                    subtitleEls.forEach(el => {
+                        const txt = el.textContent.trim();
+                        if (txt.includes('₹') || txt.includes('$') || txt.includes('PA') || txt.includes('LPA') || /\\d{2,}/.test(txt)) {
+                            salary = txt;
+                        }
+                    });
+                    let skills = [];
+                    const skillEls = card.querySelectorAll('.job-criteria__text, .job-criteria-subheader__value, [class*="skill"]');
+                    skillEls.forEach(el => {
+                        const t = el.textContent.trim();
+                        if (t && t.length < 60) skills.push(t);
+                    });
+                    return {
+                        title: titleEl ? titleEl.innerText.trim() : '',
+                        company: companyEl ? companyEl.innerText.trim() : '',
+                        location: locationEl ? locationEl.innerText.trim() : '',
+                        url: linkEl ? linkEl.href.split('?')[0] : '',
+                        posted_date_raw: rawDate,
+                        salary: salary || 'Not disclosed',
+                        skills: skills,
+                    };
+                }).filter(j => j.title && j.company && j.url);
+            }""")
+        except Exception as e:
+            print(f"  LinkedIn JS eval failed: {e}")
+            break
+
+        if not cards:
+            print(f"  No more LinkedIn jobs found at start={start}.")
+            break
+
+        dup_on_page = 0
+        for card in cards:
+            if card["url"] in existing_urls or card["url"] in all_seen_urls:
+                dup_on_page += 1
+                print(f"  [DUP] Skipping known LinkedIn URL: {card.get('title', '')}")
+                continue
+            if not title_matches_search(card.get("title", ""), search_query):
+                print(f"  Skipping title mismatch: {card.get('title', '')}")
+                continue
+            all_seen_urls.add(card["url"])
+            all_cards.append(card)
+            new_count += 1
+            if new_count >= max_jobs:
+                break
+
+        if cards and dup_on_page == len(cards):
+            print(f"  All {len(cards)} cards on this page are duplicates — stopping LinkedIn pagination.")
+            break
+
+        print(f"  LinkedIn: {new_count} new matching jobs so far...")
+        if new_count >= max_jobs:
+            break
+
+        start += 25
+        await asyncio.sleep(random.uniform(2, 4))
+
+    return all_cards[:new_count]
+
+
+async def get_linkedin_job_description(page, url):
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(random.uniform(1.5, 3.0))
+
+        result = await page.evaluate("""() => {
+            const sels = [
+                '.jobs-description-content__text', '.jobs-description__content',
+                '.show-more-less-html__markup', '[class*="jobs-description"]',
+                '.description__text',
+            ];
+            let el = null;
+            for (const s of sels) { el = document.querySelector(s); if (el) break; }
+            return { description: el ? el.innerText.trim() : '' };
+        }""")
+        return result.get("description", "")
+    except Exception:
+        return ""
+
+
+async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None, internships: bool = False):
+    """Scrape linkedin.com/jobs for listings. Returns list of job dicts matching our schema."""
+    if existing_urls is None:
+        existing_urls = set()
+    jobs = []
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--window-size=1920,1080",
+            ],
+        )
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.118 Safari/537.36"
+            ),
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+        )
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            window.chrome = {runtime: {}};
+        """)
+
+        page = await context.new_page()
+
+        print("  Warming up LinkedIn session...")
+        try:
+            await page.goto("https://www.linkedin.com/jobs/", wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(1.5)
+        except Exception:
+            print("  [WARN] LinkedIn warm-up failed, continuing anyway.")
+
+        li_location = location if location else "India"
+        cards = await get_linkedin_search_results(page, search_query, li_location, max_jobs, existing_urls=existing_urls, internships=internships)
+        print(f"  Found {len(cards)} LinkedIn listings for '{search_query}' in '{li_location}'")
+
+        for i, card in enumerate(cards):
+            if card["url"] in existing_urls:
+                print(f"  [DUP] Skipping known LinkedIn URL: {card.get('title', '')}")
+                continue
+
+            if not title_matches_search(card.get("title", ""), search_query):
+                print(f"  Skipping title mismatch: {card.get('title', '')}")
+                continue
+
+            if i > 0:
+                await asyncio.sleep(random.uniform(1.5, 3.0))
+
+            desc = await get_linkedin_job_description(page, card["url"])
+            if not desc:
+                desc = card.get("snippet", "No description available")
+
+            email = None
+            emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', desc)
+            if emails:
+                email = emails[0]
+
+            loc = extract_city_name(card.get("location", ""))
+            job_type = infer_job_type(card["title"], desc)
+            workplace = infer_workplace_type(loc, desc)
+
+            raw_date = card.get("posted_date_raw", "")
+            parsed_date = parse_linkedin_date(raw_date) if raw_date else parse_relative_date("Just Posted")
+            jobs.append({
+                "title": card["title"],
+                "company": card["company"],
+                "url": card["url"],
+                "description": desc,
+                "email": email,
+                "location": loc,
+                "country": "India",
+                "platform": "LinkedIn",
+                "job_type": job_type,
+                "workplace_type": workplace,
+                "posted_date": parsed_date,
+                "salary": card.get("salary", "Not disclosed"),
+                "skills": card.get("skills", []),
             })
             print(f"  [SUCCESS] [{i+1}/{len(cards)}] {card['company']}")
 

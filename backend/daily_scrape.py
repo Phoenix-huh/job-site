@@ -2,7 +2,7 @@
 Daily Scraper: Run this to scrape Naukri and populate the database.
 Usage: python3 daily_scrape.py [--roles "Data Analyst,Software Engineer"] [--max 20]
 
-Note: Opens a visible browser window (required to bypass Naukri's bot detection).
+Note: Runs Playwright in headless mode by default.
 """
 import asyncio
 import sys
@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from database import SessionLocal, engine
 import models
 from scoring_engine import analyze_job
-from scraper import scrape_naukri, scrape_indeed, clean_skills, title_matches_search, normalize_base_role, build_scrape_query
+from scraper import scrape_naukri, scrape_indeed, scrape_linkedin, clean_skills, title_matches_search, normalize_base_role, build_scrape_query
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -116,6 +116,12 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                     jobs.extend(i_jobs)
                     for j in i_jobs:
                         existing_urls.add(j["url"])
+                if p_lower in ("linkedin", "all"):
+                    print(f"  [Scraping LinkedIn] query={search_query}, location={city}")
+                    li_jobs = await scrape_linkedin(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls, internships=internships)
+                    jobs.extend(li_jobs)
+                    for j in li_jobs:
+                        existing_urls.add(j["url"])
             except Exception as e:
                 print(f"  [ERROR] Scrape failed for {base_role}: {e}")
                 continue
@@ -189,7 +195,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrape jobs and populate ShieldDB")
     parser.add_argument("--roles", type=str, default=None, help="Comma-separated roles to scrape (default: all)")
     parser.add_argument("--max", type=int, default=20, help="Max jobs per role (default: 20)")
-    parser.add_argument("--platform", type=str, default="all", choices=["naukri", "indeed", "all"], help="Platform to scrape (naukri, indeed, all)")
+    parser.add_argument("--platform", type=str, default="all", choices=["naukri", "indeed", "linkedin", "all"], help="Platform to scrape (naukri, indeed, linkedin, all)")
     parser.add_argument("--city", type=str, default="", help="City/location filter (e.g. Mumbai, Bangalore)")
     parser.add_argument("--internships", action="store_true", help="Scrape internship listings for each role (stored under the base role name)")
     args = parser.parse_args()

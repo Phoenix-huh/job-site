@@ -10,7 +10,7 @@ Usage:
 Listings are stored under the base role name (e.g. "Data Analyst") with job_type=Internship,
 so they appear when you select that role and switch to the Internships tab in the app.
 
-Note: Opens a visible browser window (required to bypass Naukri's bot detection).
+Note: Runs Playwright in headless mode by default.
 """
 import argparse
 import asyncio
@@ -43,7 +43,7 @@ if __name__ == "__main__":
         "--platform",
         type=str,
         default="all",
-        choices=["naukri", "indeed", "all"],
+        choices=["naukri", "indeed", "linkedin", "all"],
         help="Platform to scrape (default: all)",
     )
     parser.add_argument(
