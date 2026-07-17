@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -155,6 +156,9 @@ export default function Home() {
   const [dashSearch, setDashSearch] = useState('');
   const [dashSelectedJob, setDashSelectedJob] = useState(null);
   const [dashAppliedJobs, setDashAppliedJobs] = useState([]);
+  const [helpMsg, setHelpMsg] = useState('');
+  const [helpLoading, setHelpLoading] = useState(false);
+  const [helpSuccess, setHelpSuccess] = useState(false);
 
   const toolRef = useRef(null);
   const dialRef = useRef(null);
@@ -179,6 +183,7 @@ export default function Home() {
       fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => { });
     }
     if (viewMode === 'dashboard' && !user) setViewMode('threat');
+    if (viewMode === 'help' && !user) setViewMode('threat');
   }, [viewMode, user]);
 
   // Fetch user interactions when logged in
@@ -629,6 +634,9 @@ export default function Home() {
           {viewMode === 'threat' && (
             <a href="#tool" className="nav-tab-btn" onClick={(e) => { e.preventDefault(); document.getElementById('tool')?.scrollIntoView({ behavior: 'smooth' }); }}>Search Jobs</a>
           )}
+          {user && (
+            <button className={`nav-tab-btn ${viewMode === 'help' ? 'active' : ''}`} onClick={() => setViewMode('help')}>Help</button>
+          )}
           {user ? (
             <button className="nav-tab-btn" onClick={async () => { const { supabase } = await import("@/lib/supabase"); supabase.auth.signOut(); }} style={{ marginLeft: 'auto' }}>Log Out</button>
           ) : (
@@ -655,6 +663,9 @@ export default function Home() {
           <>
             <a href="#tool" onClick={() => setMenuOpen(false)}>Search Jobs</a>
           </>
+        )}
+        {user && (
+          <a href="#" onClick={(e) => { e.preventDefault(); setViewMode('help'); setMenuOpen(false); }}>Help</a>
         )}
         {user ? (
           <a href="#" onClick={async (e) => { e.preventDefault(); const { supabase } = await import("@/lib/supabase"); supabase.auth.signOut(); setMenuOpen(false); }}>Log Out</a>
@@ -1565,6 +1576,113 @@ export default function Home() {
                 </div>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+
+      {viewMode === 'help' && user && (
+        <section className="insights-section">
+          <div className="insights-header">
+            <h1 className="insights-title">Need Help or Have Feedback?</h1>
+            <p className="insights-subtitle">We&apos;d love to hear from you. Send us a message and we&apos;ll get back to you shortly.</p>
+          </div>
+          <div style={{ maxWidth: 640, margin: '0 auto', padding: '0 1.5rem' }}>
+            <div className="chart-card" style={{ padding: '2rem' }}>
+              {!helpSuccess ? (
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!helpMsg.trim()) return;
+                  setHelpLoading(true);
+                  try {
+                    const { data, error } = await supabase.functions.invoke("send-help-email", {
+                      body: { user_email: user.email, message: helpMsg.trim() },
+                    });
+                    if (error) throw error;
+                    if (data?.status === "sent" || data?.status === "logged") {
+                      setHelpSuccess(true);
+                      setHelpMsg('');
+                    } else {
+                      alert('Failed to send. Please try again.');
+                    }
+                  } catch (err) {
+                    console.error("[Help] submit error:", err);
+                    alert('Failed to send. Please try again.');
+                  } finally {
+                    setHelpLoading(false);
+                  }
+                }}>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                    Your Message
+                  </label>
+                  <textarea
+                    value={helpMsg}
+                    onChange={(e) => setHelpMsg(e.target.value)}
+                    rows={6}
+                    placeholder="Describe your issue, question, or feedback..."
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '0.5rem',
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.95rem',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <button
+                      type="submit"
+                      disabled={helpLoading || !helpMsg.trim()}
+                      style={{
+                        padding: '0.65rem 1.75rem',
+                        borderRadius: '0.5rem',
+                        border: 'none',
+                        background: helpLoading ? 'var(--text-muted)' : 'var(--coral)',
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        cursor: helpLoading ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      {helpLoading && (
+                        <span style={{
+                          width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)',
+                          borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite', display: 'inline-block',
+                        }} />
+                      )}
+                      {helpLoading ? 'Sending...' : 'Submit'}
+                    </button>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      from {user.email}
+                    </span>
+                  </div>
+                </form>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>&#10003;</div>
+                  <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Message Sent Successfully!</h3>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                    Thank you for reaching out. We&apos;ll review your message and get back to you at <strong>{user.email}</strong>.
+                  </p>
+                  <button
+                    onClick={() => setHelpSuccess(false)}
+                    style={{
+                      padding: '0.5rem 1.5rem', borderRadius: '0.5rem', border: '1px solid var(--coral)',
+                      background: 'transparent', color: 'var(--coral)', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    Send Another Message
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       )}

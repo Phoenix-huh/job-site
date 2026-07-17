@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, case, desc
 from typing import List, Optional
 from sse_starlette.sse import EventSourceResponse
+from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 import auth
 import models
@@ -226,6 +230,56 @@ def publish_notification(payload: dict, db: Session = Depends(get_db)):
     # Could protect this with an internal api key instead
     manager.publish(payload)
     return {"status": "published"}
+
+# --- Help / Feedback ---
+def _send_help_email(user_email: str, message: str) -> bool:
+    admin_email = os.getenv("ADMIN_EMAIL", "")
+    smtp_server = os.getenv("SMTP_SERVER", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USERNAME", "")
+    smtp_pass = os.getenv("SMTP_PASSWORD", "")
+
+    if not all([admin_email, smtp_server, smtp_user, smtp_pass]):
+        print(f"[HELP] SMTP not configured. Would have sent from={user_email} to={admin_email}")
+        print(f"[HELP] Message preview: {message[:200]}")
+        return False
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = smtp_user
+        msg["To"] = admin_email
+        msg["Subject"] = "[Job Board App] New User Request / Feedback"
+        msg["Reply-To"] = user_email
+
+        body = (
+            f"Sender User Email: {user_email}\n"
+            f"Date/Time submitted: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Message/Request Content:\n{message}"
+        )
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, admin_email, msg.as_string())
+
+        return True
+    except Exception as e:
+        print(f"[HELP] Failed to send email: {e}")
+        return False
+
+@app.post("/api/help")
+def submit_help_request(payload: schemas.HelpRequest):
+    if not payload.user_email or not payload.user_email.strip():
+        raise HTTPException(status_code=422, detail="user_email is required")
+    if not payload.message or not payload.message.strip():
+        raise HTTPException(status_code=422, detail="message is required")
+
+    sent = _send_help_email(payload.user_email.strip(), payload.message.strip())
+    if sent:
+        return {"status": "sent", "detail": "Your message has been sent successfully."}
+    else:
+        return {"status": "logged", "detail": "Your message has been received. We will get back to you shortly."}
 
 # --- RESTful endpoints for Jobs (Admin Only) ---
 @app.post("/api/jobs", response_model=schemas.JobOut, status_code=201)

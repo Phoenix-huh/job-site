@@ -81,3 +81,7 @@ class UserJobInteractionOut(UserJobInteractionBase):
 
     class Config:
         from_attributes = True
+
+class HelpRequest(BaseModel):
+    user_email: str
+    message: str
