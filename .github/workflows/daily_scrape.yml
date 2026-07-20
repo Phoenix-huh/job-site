@@ -3,22 +3,24 @@ name: Daily Scrape
 on:
   schedule:
     - cron: "0 0 */2 * *"   # every alternate day at 00:00 UTC
-  workflow_dispatch:       # manual trigger from GitHub UI
+  workflow_dispatch:         # manual trigger from GitHub UI
 
 jobs:
   scrape-jobs:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+      PYTHONUNBUFFERED: "1"
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -33,7 +35,23 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: Run daily job scrape
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python backend/daily_scrape.py --max 20
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+            python -u backend/daily_scrape.py --max 20 2>&1 | tee scrape-jobs.log
+        continue-on-error: true
 
       - name: Run daily internship scrape
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python backend/daily_scrape_internships.py --max 20
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+            python -u backend/daily_scrape_internships.py --max 20 2>&1 | tee scrape-internships.log
+        continue-on-error: true
+
+      - name: Upload scrape logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-logs
+          path: |
+            scrape-jobs.log
+            scrape-internships.log
+          retention-days: 14

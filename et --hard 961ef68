@@ -1,0 +1,44 @@
+[33m961ef68[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m github actions 1.0
+[33m377b99f[m help tab
+[33m4b48507[m linkedin scrapper addition n optimization
+[33mb86ddda[m personalized dashboard
+[33mff8062c[m nav update
+[33me469f77[m reject duplicates
+[33m4b4b2bf[m old  jobs deletion
+[33md4639a9[m before scrapper update
+[33m9bf6a76[m fix: auth UI with animated characters, Tailwind v4 setup, hardcoded auth
+[33m9ac6b44[m Update main.py
+[33md671e91[m chore: trigger vercel redeployment
+[33m74c5d16[m Add files via upload
+[33m4e0aee8[m feat: implement location filtering and backend performance optimizations
+[33me2f2264[m Update frontend: implemented search functionality and updated UI styles
+[33m7e60625[m Update scoring engine with P5, add caution stats to dashboard, and inject demo scam data
+[33m3db096e[m fix: remove all parallax components entirely and fix UI text overlapping issues in dial and hero sections
+[33mf542ee1[m fix: restore cinematic parallax and patch text cutoff UI bug
+[33m8afd4f8[m Revert "style: replicate giganticmedia dual-tone scrolling color flipper and architectural vector line parallax via framer-motion"
+[33mf67379f[m style: replicate giganticmedia dual-tone scrolling color flipper and architectural vector line parallax via framer-motion
+[33m43e62bf[m feat: Replace 3D engine with ultra-premium buttery smooth 2D cinematic multi-layered parallax
+[33m4088f4b[m feat: Replace giant laggy hero mesh with high-performance 3D Sidebar Threat Network parallax
+[33mbd896ea[m style: redesign hero shield to use premium glass transmission material and hdr environment lighting
+[33mc8dea2c[m refactor: replace scattered 3D models with a single hero spinning shield scroll animation
+[33m9b0ebe5[m feat: Add thematic 3D foreground parallax effect with Scam and Shield meshes
+[33m98ba90c[m refactor: replace 3d background with responsive parallax foreground effect, revert section colours
+[33mfd3a62c[m feat: Add scroll-reactive 3D background using three.js and react-three-fiber
+[33ma467c9c[m feat: Add jobs vs internship tab, update copy, and improve filter UI
+[33ma070bfd[m docs: Add live demo link
+[33mf58a7f5[m docs: Detail PostgreSQL setup and Vercel/Render remote sync rules
+[33m990152d[m chore: Remove deprecated Chrome extension files
+[33m1dbadcd[m Delete parameters_breakdown.md
+[33m76a4a13[m Delete popup.html
+[33m72e07f8[m Delete popup.js
+[33m97d347f[m docs: Add comprehensive README and setup instructions
+[33m29bc3b9[m Added /api/seed endpoint to trigger data injection remotely
+[33mcbd5950[m Initial commit for Job Scam Detection Dashboard
+[33m47bcf07[m Update UI score tooltip, remove Gemini Nano, and update AI API to use Cloud Gemini
+[33mbb61a43[m docs: Update documentation for v3.0
+[33mf54f86a[m fix: Replace unstable WHOIS API with official IANA RDAP
+[33m3c12044[m fix: Optimize AI output config and UX
+[33m5617ae7[m feat: Add dual-engine AI fallback (Gemini API Free Tier)
+[33m26108fd[m fix: Remove invalid aiLanguageModelOriginTrial permission
+[33m2d7bcde[m feat: Add Chrome Built-in AI (Gemini Nano) for on-device analysis
+[33m2c3418c[m v3.0: Corroborated Threat Intelligence Engine
