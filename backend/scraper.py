@@ -6,8 +6,10 @@ import asyncio
 import random
 import re
 import json
+import os
 import urllib.parse
 from datetime import datetime, timedelta
+import requests as _requests
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from playwright_stealth import Stealth
@@ -817,362 +819,138 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
 
 
 # ---------------------------------------------------------------------------
-# Indeed Scraper Helper Functions
+# Indeed Scraper — JSearch API (RapidAPI)
 # ---------------------------------------------------------------------------
 
-async def _human_delay(lo=2.0, hi=5.0):
-    await asyncio.sleep(random.uniform(lo, hi))
-
-
-async def _slow_scroll(page, steps=4):
-    for _ in range(steps):
-        delta = random.randint(300, 700)
-        await page.mouse.wheel(0, delta)
-        await _human_delay(0.8, 1.8)
-
-
-async def _is_blocked(page) -> bool:
-    try:
-        title = await page.title()
-        lower = title.lower()
-        blocked_keywords = ("blocked", "just a moment", "access denied", "captcha", "attention required", "sorry, we just need")
-        if any(kw in lower for kw in blocked_keywords):
-            try:
-                body_snippet = await page.evaluate("() => document.body?.innerText?.substring(0, 300) || ''")
-            except Exception:
-                body_snippet = "(could not read body)"
-            print(f"  [BLOCKED] Page title: {title}")
-            print(f"  [BLOCKED] Body preview: {body_snippet[:200]}")
-            return True
-        return False
-    except Exception:
-        return True
-
-
-async def _wait_for_cloudflare(page, max_wait_s=50, label=""):
-    """Wait for Cloudflare challenge to auto-resolve."""
-    elapsed = 0
-    interval = 5
-    while elapsed < max_wait_s:
-        await asyncio.sleep(interval)
-        elapsed += interval
-        try:
-            if not await _is_blocked(page):
-                print(f"  [OK] Cloudflare passed{' (' + label + ')' if label else ''} after ~{elapsed}s")
-                return True
-        except Exception:
-            return False
-    print(f"  [FAIL] Cloudflare block persisted{' (' + label + ')' if label else ''} after {max_wait_s}s")
-    return False
-
-
-async def _safe_goto(page, url, timeout=60000):
-    try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-        current_url = page.url
-        current_title = await page.title()
-        lower_title = current_title.lower()
-        if any(kw in lower_title for kw in ("blocked", "just a moment", "access denied", "captcha", "attention required")):
-            print(f"  [BLOCKED] Indeed blocked by anti-bot mitigation after navigating to {url}")
-            print(f"  [BLOCKED] Landed on: {current_url} | title: {current_title}")
-            try:
-                body_snippet = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || ''")
-                print(f"  [BLOCKED] Page source preview: {body_snippet[:300]}")
-            except Exception:
-                pass
-            return True
-        return True
-    except Exception as e:
-        print(f"  Navigation error for {url}: {e}")
-        return False
-
-
-async def get_indeed_search_results(page, role, location="", max_jobs=10, max_pages=15, existing_urls=None):
+async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
+    """Fetch Indeed listings via JSearch API. Returns list of job dicts."""
     if existing_urls is None:
         existing_urls = set()
-    all_cards = []
-    new_count = 0
-    start_offset = 0
-    cf_failures = 0
-    MAX_CF_FAILS = 3
-    pages_fetched = 0
 
-    while new_count < max_jobs and pages_fetched < max_pages:
-        params = {"q": role}
-        if location:
-            params["l"] = location
-        if start_offset > 0:
-            params["start"] = str(start_offset)
+    api_key = os.getenv("RAPIDAPI_KEY")
+    if not api_key:
+        print("  [WARN] RAPIDAPI_KEY not set — skipping Indeed (JSearch API).")
+        return []
 
-        url = f"https://in.indeed.com/jobs?{urllib.parse.urlencode(params)}"
-        print(f"  Loading Indeed search page (start={start_offset}): {url}")
+    query = f"{search_query} jobs"
+    if location:
+        query = f"{query} in {location}"
 
-        try:
-            if not await _safe_goto(page, url):
-                print(f"  [WARN] Failed to load Indeed search page at offset {start_offset}")
-                cf_failures += 1
-                if cf_failures >= MAX_CF_FAILS:
-                    print(f"  [FAIL] {MAX_CF_FAILS} consecutive load failures — aborting Indeed.")
-                    break
-                start_offset += 10
-                pages_fetched += 1
-                await _human_delay(5, 10)
-                continue
-        except Exception as e:
-            print(f"  [ERROR] Indeed navigation exception: {e}")
-            cf_failures += 1
-            if cf_failures >= MAX_CF_FAILS:
-                break
-            start_offset += 10
-            pages_fetched += 1
-            continue
+    headers = {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+    }
 
-        await _human_delay(5, 9)
+    jobs = []
+    page = 1
+    fetched = 0
 
-        if await _is_blocked(page):
-            print("  [WARN] Indeed blocked by anti-bot mitigation (Cloudflare). Waiting...")
-            if not await _wait_for_cloudflare(page, max_wait_s=50, label=f"offset {start_offset}"):
-                cf_failures += 1
-                if cf_failures >= MAX_CF_FAILS:
-                    print(f"  [FAIL] {MAX_CF_FAILS} consecutive CF blocks — aborting Indeed.")
-                    break
-                start_offset += 10
-                pages_fetched += 1
-                continue
-        else:
-            page_title = await page.title()
-            print(f"  Indeed search page loaded OK: title='{page_title}'")
+    while fetched < max_jobs:
+        params = {
+            "query": query,
+            "page": str(page),
+            "num_pages": "1",
+        }
 
-        cf_failures = 0
-        await _slow_scroll(page)
+        print(f"  [JSearch] Fetching page {page} for '{query}'")
 
         try:
-            cards = await page.evaluate('''() => {
-                const results = [];
-                const seen = new Set();
-
-                // Indeed card selectors (multiple versions)
-                const containerSelectors = [
-                    '.job_seen_beacon',
-                    '.resultContent',
-                    '[data-jk]',
-                    '.jobsearch-ResultsList > li',
-                    '.tapItem',
-                ];
-
-                let allCards = [];
-                for (const sel of containerSelectors) {
-                    const found = document.querySelectorAll(sel);
-                    if (found.length > 0) { allCards = found; break; }
-                }
-
-                allCards.forEach(card => {
-                    const titleEl = card.querySelector(
-                        'a.jcs-JobTitle, h2.jobTitle a, .jobTitle a, ' +
-                        '[class*="jobTitle"] a, a[data-jk], .resultContent a'
-                    );
-                    if (!titleEl) return;
-
-                    const compEl  = card.querySelector('[data-testid="company-name"], .companyName, span.companyName');
-                    const locEl   = card.querySelector('[data-testid="text-location"], .companyLocation, div.companyLocation');
-                    const descEl  = card.querySelector('.job-snippet, [class*="job-snippet"], .underShelfFooter, [class*="snippet"]');
-
-                    const dateEl  = card.querySelector('.date, [class*="date"], .myJobsState, .date-written');
-
-                    const jk = card.getAttribute('data-jk') || titleEl.getAttribute('data-jk') || '';
-                    let href = titleEl.getAttribute('href') || '';
-                    if (jk && !href.includes('/viewjob')) href = '/viewjob?jk=' + jk;
-                    const fullUrl = href.startsWith('http') ? href : 'https://in.indeed.com' + href;
-
-                    if (seen.has(fullUrl)) return;
-                    seen.add(fullUrl);
-
-                    let company = compEl ? compEl.textContent.trim() : 'Unknown';
-                    let location = locEl ? locEl.textContent.trim() : '';
-                    
-                    // Strip duplicated company prefix from location
-                    if (location.toLowerCase().startsWith(company.toLowerCase())) {
-                        location = location.slice(company.length).trim();
-                    }
-
-                    results.push({
-                        title:    titleEl.textContent.trim(),
-                        url:      fullUrl,
-                        company:  company,
-                        location: location,
-                        snippet:  descEl  ? descEl.textContent.trim()  : '',
-                        posted_date: dateEl ? dateEl.textContent.trim() : 'Just Posted',
-                        jk:       jk,
-                    });
-                });
-                return results;
-            }''')
-        except Exception as e:
-            print(f"  [ERROR] Indeed JS eval failed: {e}")
-            start_offset += 10
-            pages_fetched += 1
-            await _human_delay(4, 8)
-            continue
-
-        if not cards:
-            print(f"  No jobs extracted from Indeed at offset {start_offset}, advancing to offset {start_offset + 10}")
-            start_offset += 10
-            pages_fetched += 1
-            await _human_delay(4, 8)
-            continue
-
-        matched, skipped = filter_cards_by_role(cards, role)
-        for card in skipped:
-            print(f"  [SKIP] Not a {role} role: {card.get('title', '')}")
-
-        page_new = 0
-        page_dupes = 0
-        for card in matched:
-            cid = card.get("jk") or card.get("url")
-            card_url = card.get("url", "")
-            if card_url in existing_urls:
-                page_dupes += 1
-                print(f"  [DUP] Skipping known URL: {card.get('title', '')}")
-                continue
-            if not any((c.get("jk") or c.get("url")) == cid for c in all_cards):
-                all_cards.append(card)
-                new_count += 1
-                page_new += 1
-                if new_count >= max_jobs:
-                    break
-
-        print(f"  Indeed offset {start_offset} summary: {len(cards)} extracted, {len(matched)} role-matched, {page_dupes} dupes, {page_new} new → total {new_count}/{max_jobs}")
-
-        print(f"  Collected {new_count} new matching jobs so far...")
-        if new_count >= max_jobs:
+            resp = _requests.get(
+                "https://jsearch.p.rapidapi.com/search",
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+            resp.raise_for_status()
+        except _requests.exceptions.HTTPError as e:
+            print(f"  [JSearch] HTTP error: {e} — status {resp.status_code}")
+            break
+        except _requests.exceptions.RequestException as e:
+            print(f"  [JSearch] Request failed: {e}")
             break
 
-        start_offset += 10
-        pages_fetched += 1
-        await _human_delay(4, 8)
-
-    return all_cards[:new_count]
-
-
-async def get_indeed_job_description(page, url):
-    try:
-        if not await _safe_goto(page, url, timeout=30000):
-            return ""
-        await _human_delay(4, 7)
-
-        if await _is_blocked(page):
-            if not await _wait_for_cloudflare(page, max_wait_s=30, label="JD"):
-                return ""
-
-        result = await page.evaluate('''() => {
-            const sels = [
-                '#jobDescriptionText',
-                '.jobsearch-JobComponent-description',
-                '[class*="jobDescription"]',
-                '.jobsearch-jobDescriptionText',
-                '#jobDescription',
-            ];
-            let el = null;
-            for (const s of sels) { el = document.querySelector(s); if (el) break; }
-            return { description: el ? el.innerText.trim() : '' };
-        }''')
-        return result.get("description", "")
-    except Exception:
-        return ""
-
-
-async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
-    """Scrape in.indeed.com for job listings. Returns list of job dicts."""
-    if existing_urls is None:
-        existing_urls = set()
-    jobs = []
-
-    async with async_playwright() as p:
-        # Use Firefox — it has a much better Cloudflare pass-rate than Chromium
-        browser = await p.firefox.launch(
-            headless=False,
-            args=["--width=1920", "--height=1080"],
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            locale="en-IN",
-            timezone_id="Asia/Kolkata",
-            geolocation={"latitude": 19.076, "longitude": 72.8777},
-            permissions=["geolocation"],
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) "
-                "Gecko/20100101 Firefox/128.0"
-            ),
-        )
-
-        page = await context.new_page()
-
-        # Apply stealth patches (hides webdriver, overrides navigator props, etc.)
-        await Stealth().apply_stealth_async(page)
-
-        # Warm up — visit homepage to acquire cookies / solve initial CF
-        print("  Warming up Indeed session (Firefox + stealth)...")
         try:
-            if await _safe_goto(page, "https://in.indeed.com/", timeout=30000):
-                await _human_delay(4, 7)
-                page_title = await page.title()
-                print(f"  Indeed homepage loaded: title='{page_title}'")
-                if await _is_blocked(page):
-                    print("  [WARN] Indeed blocked by anti-bot mitigation on homepage. Waiting for Cloudflare...")
-                    if not await _wait_for_cloudflare(page, max_wait_s=60, label="homepage"):
-                        print("  [FAIL] Could not pass Indeed Cloudflare on homepage. Scraping may fail.")
-                else:
-                    print("  Indeed homepage OK — no Cloudflare detected.")
-            else:
-                print("  [WARN] Indeed homepage warm-up navigation failed.")
-        except Exception as e:
-            print(f"  [WARN] Indeed warm-up exception: {e}")
+            payload = resp.json()
+        except (ValueError, json.JSONDecodeError):
+            print(f"  [JSearch] Invalid JSON response")
+            break
 
-        # Scrape search results
-        cards = await get_indeed_search_results(page, search_query, location, max_jobs, existing_urls=existing_urls)
-        print(f"  Found {len(cards)} listings for '{search_query}' in '{location or 'India'}'")
+        data = payload.get("data") or []
+        if not data:
+            print(f"  [JSearch] No results on page {page}.")
+            break
 
-        # Fetch full descriptions
-        for i, card in enumerate(cards):
-            if not title_matches_search(card.get("title", ""), search_query):
-                print(f"  Skipping title mismatch: {card.get('title', '')}")
+        for item in data:
+            if fetched >= max_jobs:
+                break
+
+            title = item.get("job_title", "").strip()
+            company = item.get("employer_name", "").strip() or "Unknown"
+            description = item.get("job_description", "").strip()
+            apply_url = item.get("job_apply_link", "").strip()
+            apply_url = apply_url.split("?")[0] if apply_url else ""
+
+            if not title or not apply_url:
                 continue
 
-            if i > 0:
-                await _human_delay(3, 6)
+            if apply_url in existing_urls:
+                print(f"  [DUP] Skipping known JSearch URL: {title}")
+                continue
 
-            desc = await get_indeed_job_description(page, card["url"])
-            if not desc:
-                desc = card.get("snippet", "No description available")
+            if not title_matches_search(title, search_query):
+                print(f"  Skipping title mismatch: {title}")
+                continue
+
+            city = item.get("job_city", "") or ""
+            country = item.get("job_country", "") or ""
+            loc_str = f"{city}, {country}".strip(", ") if city or country else "Unknown"
 
             email = None
-            emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', desc)
+            emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', description)
             if emails:
                 email = emails[0]
 
-            loc = extract_city_name(card.get("location", ""))
-            job_type = infer_job_type(card["title"], desc)
-            workplace = infer_workplace_type(loc, desc)
+            loc = extract_city_name(loc_str)
+            job_type = infer_job_type(title, description)
+            workplace = infer_workplace_type(loc, description)
+
+            posted_raw = item.get("job_posted_at_datetime_utc") or item.get("job_posted_date") or ""
+            if isinstance(posted_raw, str) and posted_raw:
+                posted_date = parse_relative_date(posted_raw)
+            elif hasattr(posted_raw, "strftime"):
+                posted_date = posted_raw.strftime("%Y-%m-%d")
+            else:
+                posted_date = datetime.today().strftime("%Y-%m-%d")
+
+            salary_min = item.get("job_min_salary")
+            salary_max = item.get("job_max_salary")
+            salary_currency = item.get("job_salary_currency", "")
+            if salary_min and salary_max:
+                salary = f"{salary_currency}{salary_min} - {salary_currency}{salary_max}".strip()
+            else:
+                salary = "Not disclosed"
 
             jobs.append({
-                "title":    card["title"],
-                "company":  card["company"],
-                "url":      card["url"],
-                "description": desc,
-                "email":    email,
+                "title": title,
+                "company": company,
+                "url": apply_url,
+                "description": description or "No description available",
+                "email": email,
                 "location": loc,
-                "country": "India",
-                "platform": "Indeed",
+                "country": country or "India",
+                "platform": "Indeed (JSearch API)",
                 "job_type": job_type,
                 "workplace_type": workplace,
-                "posted_date": parse_relative_date(card.get("posted_date", "Just Posted")),
-                "salary": "Not disclosed",
-                "skills": []
+                "posted_date": posted_date,
+                "salary": salary,
+                "skills": [],
             })
-            print(f"  [SUCCESS] [{i+1}/{len(cards)}] {card['company']}")
+            fetched += 1
+            print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
 
-        await browser.close()
+        page += 1
 
+    print(f"  [JSearch] Total fetched: {len(jobs)} listings for '{search_query}'")
     return jobs
 
 

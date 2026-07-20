@@ -13,6 +13,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
       PYTHONUNBUFFERED: "1"
 
     steps:
