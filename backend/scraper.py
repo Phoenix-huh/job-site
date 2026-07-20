@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from playwright_stealth import Stealth
 
 
-async def get_search_results(page, role, location="", max_jobs=10, max_pages=15, existing_urls=None):
+async def get_search_results(page, role, location="", max_jobs=10, max_pages=10, existing_urls=None):
     """Get list of job URLs + basic info from search results pages (supports pagination)."""
     if existing_urls is None:
         existing_urls = set()
@@ -25,6 +25,8 @@ async def get_search_results(page, role, location="", max_jobs=10, max_pages=15,
     all_cards = []
     new_count = 0
     page_num = 1
+    consecutive_empty = 0
+    MAX_CONSECUTIVE_EMPTY = 10
     
     while new_count < max_jobs and page_num <= max_pages:
         url = f"https://www.naukri.com/{slug}" if page_num == 1 else f"https://www.naukri.com/{slug}-{page_num}"
@@ -34,10 +36,42 @@ async def get_search_results(page, role, location="", max_jobs=10, max_pages=15,
             await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
             print(f"  Failed to load {url}: {e}")
-            break
-            
+            page_num += 1
+            continue
+
+        # Debug: log actual page we landed on
+        current_url = page.url
+        current_title = await page.title()
+        print(f"  Landed on: {current_url} | title: {current_title}")
+
+        # Dismiss login/auth popups that Naukri shows
+        try:
+            await page.evaluate("""() => {
+                const closeBtn = document.querySelector('.crossIcon, .modal-close, [class*="close"], button[aria-label="Close"]');
+                if (closeBtn) closeBtn.click();
+                const overlay = document.querySelector('.blackLayer, .overlay, [class*="modal-backdrop"]');
+                if (overlay) overlay.remove();
+            }""")
+        except Exception:
+            pass
+
         await asyncio.sleep(random.uniform(6, 10))
         
+        # Wait for job cards to actually appear in DOM
+        try:
+            await page.wait_for_selector(
+                '.cust-job-tuple, .srp-jobtuple-wrapper, .jobTuple, article.jobTuple, .srp-tuple, [class*="jobTuple"], [class*="job-tuple"]',
+                timeout=20000,
+            )
+        except Exception:
+            print(f"  [WARN] Job card selector not found within 20s on page {page_num}")
+            # Debug: dump a snippet of the page HTML to diagnose
+            try:
+                body_text = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || 'NO BODY'")
+                print(f"  [DEBUG] Page body preview: {body_text[:300]}")
+            except Exception:
+                pass
+
         # Scroll to load lazy content
         for _ in range(3):
             await page.mouse.wheel(0, 500)
@@ -46,19 +80,37 @@ async def get_search_results(page, role, location="", max_jobs=10, max_pages=15,
         # Extract job cards
         cards = await page.evaluate('''() => {
             const results = [];
-            document.querySelectorAll('.cust-job-tuple, .srp-jobtuple-wrapper, .jobTuple, article.jobTuple').forEach(card => {
-                const titleEl = card.querySelector('a.title, a.jobTitle, .title a');
-                const compEl  = card.querySelector('.comp-name, .comp-dtls-wrap a, .subTitle, .companyName');
-                const descEl  = card.querySelector('.job-desc, .ellipsis, .job-description, .jobDescription');
+            // Try multiple known Naukri card selectors (they rotate their DOM)
+            const cardSelectors = [
+                '.cust-job-tuple',
+                '.srp-jobtuple-wrapper',
+                '.jobTuple',
+                'article.jobTuple',
+                '.srp-tuple',
+                '[class*="jobTuple"]',
+                '[class*="job-tuple"]',
+                '[class*="srp-job"]',
+                '.search-job-result > div',
+            ];
+            let allCards = [];
+            for (const sel of cardSelectors) {
+                const found = document.querySelectorAll(sel);
+                if (found.length > 0) { allCards = found; break; }
+            }
+
+            allCards.forEach(card => {
+                const titleEl = card.querySelector('a.title, a.jobTitle, .title a, a[id^="job-title"], h2 a, [class*="title"] a');
+                const compEl  = card.querySelector('.comp-name, .comp-dtls-wrap a, .subTitle, .companyName, [class*="company"] a, [class*="comp-name"]');
+                const descEl  = card.querySelector('.job-desc, .ellipsis, .job-description, .jobDescription, [class*="job-desc"]');
 
                 // Location
-                const locEl   = card.querySelector('.loc-wrap, .location, .loc, .locWdth, .locWdth span');
+                const locEl   = card.querySelector('.loc-wrap, .location, .loc, .locWdth, .locWdth span, [class*="loc"]');
 
                 // Salary
-                const salEl   = card.querySelector('.sal-wrap, .salary, .sal, .salaryText');
+                const salEl   = card.querySelector('.sal-wrap, .salary, .sal, .salaryText, [class*="sal"]');
 
                 // Tags / skills
-                const tagEls  = card.querySelectorAll('.tags-gt .tag-li, .skills-list .tag-li, .tags-gt li, .tag-li, .techSkill');
+                const tagEls  = card.querySelectorAll('.tags-gt .tag-li, .skills-list .tag-li, .tags-gt li, .tag-li, .techSkill, [class*="skill"] li, [class*="tag"] li');
 
                 // --- Posted date: try multiple known selectors ---
                 const dateSelectors = [
@@ -113,23 +165,40 @@ async def get_search_results(page, role, location="", max_jobs=10, max_pages=15,
         }''')
         
         if not cards:
-            print(f"  No more jobs found on page {page_num}.")
-            break
+            consecutive_empty += 1
+            print(f"  Page {page_num}: 0 cards extracted from DOM. Advancing to page {page_num + 1} (empty streak: {consecutive_empty})")
+            if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                print(f"  {MAX_CONSECUTIVE_EMPTY} consecutive empty pages — stopping Naukri pagination.")
+                break
+            page_num += 1
+            await asyncio.sleep(random.uniform(4, 8))
+            continue
+
+        consecutive_empty = 0
 
         matched, skipped = filter_cards_by_role(cards, role)
         for card in skipped:
             print(f"  [SKIP] Not a {role} role: {card.get('title', '')}")
 
+        page_dupes = 0
+        page_new = 0
         for card in matched:
             if card.get("url") in existing_urls:
+                page_dupes += 1
                 print(f"  [DUP] Skipping known URL: {card.get('title', '')}")
                 continue
             if not any(c.get("url") == card["url"] for c in all_cards):
                 all_cards.append(card)
                 new_count += 1
+                page_new += 1
                 if new_count >= max_jobs:
                     break
         
+        print(f"  Page {page_num} summary: {len(cards)} extracted, {len(matched)} role-matched, {page_dupes} duplicates, {page_new} new → total {new_count}/{max_jobs}")
+
+        if page_new == 0:
+            print(f"  No new jobs on page {page_num} ({page_dupes} dupes, {len(skipped)} mismatches), advancing to page {page_num + 1}")
+
         if new_count >= max_jobs:
             break
             
@@ -670,16 +739,17 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
     jobs = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-gpu",
                 "--no-sandbox",
+                "--disable-dev-shm-usage",
                 "--window-size=1920,1080",
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Safari/537.36",
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
         )
@@ -690,6 +760,8 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
         """)
         
         page = await context.new_page()
+
+        await Stealth().apply_stealth_async(page)
         
         # Warm up session
         await page.goto("https://www.naukri.com/", wait_until="domcontentloaded", timeout=30000)
@@ -1246,18 +1318,19 @@ async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int =
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-gpu",
                 "--no-sandbox",
+                "--disable-dev-shm-usage",
                 "--window-size=1920,1080",
             ],
         )
         context = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.118 Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Safari/537.36"
             ),
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
@@ -1269,6 +1342,8 @@ async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int =
         """)
 
         page = await context.new_page()
+
+        await Stealth().apply_stealth_async(page)
 
         print("  Warming up LinkedIn session...")
         try:
