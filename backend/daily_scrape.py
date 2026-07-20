@@ -2,12 +2,13 @@
 Daily Scraper: Run this to scrape Naukri and populate the database.
 Usage: python3 daily_scrape.py [--roles "Data Analyst,Software Engineer"] [--max 20]
 
-Note: Runs Playwright in headless mode by default.
+Note: Runs Playwright in non-headless mode by default.
 """
 import asyncio
 import sys
 import os
 import argparse
+import time as _time
 from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -68,12 +69,13 @@ ALL_ROLES = [
 ]
 
 async def run(roles, max_per_role, platform="all", city="", internships=False):
-    db = SessionLocal()
     total_new = 0
     total_skipped = 0
     listing_type = "internships" if internships else "jobs"
+    run_start = _time.time()
 
     # ── Cleanup: delete jobs older than 90 days ──
+    db = SessionLocal()
     try:
         cutoff = date.today() - timedelta(days=90)
         stale_jobs = db.query(models.Job).filter(models.Job.posted_date != None, models.Job.posted_date < cutoff).all()
@@ -88,16 +90,23 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
     except Exception as e:
         db.rollback()
         print(f"[CLEANUP] Failed: {e}")
+    finally:
+        db.close()
 
-    try:
-        for i, role in enumerate(roles):
-            base_role = normalize_base_role(role)
-            search_query = build_scrape_query(base_role, internships=internships)
-            print(f"\n{'='*50}")
-            print(f"[{i+1}/{len(roles)}] Scraping {listing_type}: {base_role}")
-            print(f"  Search query: {search_query}")
-            print(f"{'='*50}")
+    for i, role in enumerate(roles):
+        base_role = normalize_base_role(role)
+        search_query = build_scrape_query(base_role, internships=internships)
+        pct = round((i / len(roles)) * 100)
+        elapsed_min = round((_time.time() - run_start) / 60, 1)
+        print(f"\n{'='*60}")
+        print(f"[PROGRESS] Starting role {i+1}/{len(roles)}: {base_role} — {pct}% complete ({elapsed_min}m elapsed)")
+        print(f"  Search query: {search_query}")
+        print(f"{'='*60}")
 
+        # Fresh session per role to prevent connection pool exhaustion over long runs
+        db = SessionLocal()
+
+        try:
             existing_urls = set(row[0] for row in db.query(models.Job.url).all() if row[0])
             print(f"  [DB] {len(existing_urls)} existing job URLs in database")
             
@@ -126,6 +135,7 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                 print(f"  [ERROR] Scrape failed for {base_role}: {e}")
                 continue
             
+            role_new = 0
             for jd in jobs:
                 if not title_matches_search(jd.get("title", ""), search_query):
                     print(f"  [SKIP] Title mismatch: {jd.get('title', '')}")
@@ -156,7 +166,6 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                 db.commit()
                 db.refresh(job)
                 
-                # Score
                 score_data = analyze_job(job.description, job.company, job.email)
                 score = models.Score(
                     job_id=job.id,
@@ -168,28 +177,35 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                 db.add(score)
                 db.commit()
                 total_new += 1
+                role_new += 1
                 print(f"  [OK] {jd['company']} -> {score_data['final_score']}% scam ({len(score_data['flags'])} flags)")
                 
-                # Notify dashboard via API loopback
                 try:
                     import requests
                     requests.post("http://localhost:8000/api/notifications/publish", 
                                   json={"event": "new_job", "title": jd["title"], "company": jd["company"]},
                                   timeout=2)
-                except Exception as e:
+                except Exception:
                     pass
+
+            print(f"  [ROLE DONE] {base_role}: {role_new} new {listing_type} added this round (total: {total_new})")
+        except Exception as e:
+            db.rollback()
+            print(f"  [ERROR] DB error for {base_role}: {e}")
+        finally:
+            db.close()
             
-            # Delay between roles
-            if i < len(roles) - 1:
-                delay = 10
-                print(f"  [WAIT] Waiting {delay}s before next role...")
-                await asyncio.sleep(delay)
-    finally:
-        db.close()
-    
-    print(f"\n{'='*50}")
-    print(f"Done! Added {total_new} new jobs, skipped {total_skipped} duplicates.")
-    print(f"{'='*50}")
+        # Delay between roles
+        if i < len(roles) - 1:
+            delay = 10
+            print(f"  [WAIT] Waiting {delay}s before next role...")
+            await asyncio.sleep(delay)
+
+    total_min = round((_time.time() - run_start) / 60, 1)
+    print(f"\n{'='*60}")
+    print(f"DONE! Added {total_new} new {listing_type}, skipped {total_skipped} mismatches.")
+    print(f"Total runtime: {total_min} minutes")
+    print(f"{'='*60}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrape jobs and populate ShieldDB")
