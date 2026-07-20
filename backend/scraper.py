@@ -835,7 +835,16 @@ async def _is_blocked(page) -> bool:
     try:
         title = await page.title()
         lower = title.lower()
-        return any(kw in lower for kw in ("blocked", "just a moment", "access denied", "captcha"))
+        blocked_keywords = ("blocked", "just a moment", "access denied", "captcha", "attention required", "sorry, we just need")
+        if any(kw in lower for kw in blocked_keywords):
+            try:
+                body_snippet = await page.evaluate("() => document.body?.innerText?.substring(0, 300) || ''")
+            except Exception:
+                body_snippet = "(could not read body)"
+            print(f"  [BLOCKED] Page title: {title}")
+            print(f"  [BLOCKED] Body preview: {body_snippet[:200]}")
+            return True
+        return False
     except Exception:
         return True
 
@@ -860,9 +869,21 @@ async def _wait_for_cloudflare(page, max_wait_s=50, label=""):
 async def _safe_goto(page, url, timeout=60000):
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+        current_url = page.url
+        current_title = await page.title()
+        lower_title = current_title.lower()
+        if any(kw in lower_title for kw in ("blocked", "just a moment", "access denied", "captcha", "attention required")):
+            print(f"  [BLOCKED] Indeed blocked by anti-bot mitigation after navigating to {url}")
+            print(f"  [BLOCKED] Landed on: {current_url} | title: {current_title}")
+            try:
+                body_snippet = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || ''")
+                print(f"  [BLOCKED] Page source preview: {body_snippet[:300]}")
+            except Exception:
+                pass
+            return True
         return True
     except Exception as e:
-        print(f"  Navigation error: {e}")
+        print(f"  Navigation error for {url}: {e}")
         return False
 
 
@@ -884,23 +905,43 @@ async def get_indeed_search_results(page, role, location="", max_jobs=10, max_pa
             params["start"] = str(start_offset)
 
         url = f"https://in.indeed.com/jobs?{urllib.parse.urlencode(params)}"
-        print(f"  Loading search page (start={start_offset}): {url}")
+        print(f"  Loading Indeed search page (start={start_offset}): {url}")
 
-        if not await _safe_goto(page, url):
-            break
+        try:
+            if not await _safe_goto(page, url):
+                print(f"  [WARN] Failed to load Indeed search page at offset {start_offset}")
+                cf_failures += 1
+                if cf_failures >= MAX_CF_FAILS:
+                    print(f"  [FAIL] {MAX_CF_FAILS} consecutive load failures — aborting Indeed.")
+                    break
+                start_offset += 10
+                pages_fetched += 1
+                await _human_delay(5, 10)
+                continue
+        except Exception as e:
+            print(f"  [ERROR] Indeed navigation exception: {e}")
+            cf_failures += 1
+            if cf_failures >= MAX_CF_FAILS:
+                break
+            start_offset += 10
+            pages_fetched += 1
+            continue
 
         await _human_delay(5, 9)
 
         if await _is_blocked(page):
-            print("  [WARN] Cloudflare challenge detected. Waiting...")
+            print("  [WARN] Indeed blocked by anti-bot mitigation (Cloudflare). Waiting...")
             if not await _wait_for_cloudflare(page, max_wait_s=50, label=f"offset {start_offset}"):
                 cf_failures += 1
                 if cf_failures >= MAX_CF_FAILS:
-                    print(f"  [FAIL] {MAX_CF_FAILS} consecutive CF blocks — aborting.")
+                    print(f"  [FAIL] {MAX_CF_FAILS} consecutive CF blocks — aborting Indeed.")
                     break
                 start_offset += 10
                 pages_fetched += 1
                 continue
+        else:
+            page_title = await page.title()
+            print(f"  Indeed search page loaded OK: title='{page_title}'")
 
         cf_failures = 0
         await _slow_scroll(page)
@@ -967,28 +1008,40 @@ async def get_indeed_search_results(page, role, location="", max_jobs=10, max_pa
                 return results;
             }''')
         except Exception as e:
-            print(f"  JS eval failed: {e}")
-            break
+            print(f"  [ERROR] Indeed JS eval failed: {e}")
+            start_offset += 10
+            pages_fetched += 1
+            await _human_delay(4, 8)
+            continue
 
         if not cards:
-            print(f"  No jobs found at offset {start_offset}.")
-            break
+            print(f"  No jobs extracted from Indeed at offset {start_offset}, advancing to offset {start_offset + 10}")
+            start_offset += 10
+            pages_fetched += 1
+            await _human_delay(4, 8)
+            continue
 
         matched, skipped = filter_cards_by_role(cards, role)
         for card in skipped:
             print(f"  [SKIP] Not a {role} role: {card.get('title', '')}")
 
+        page_new = 0
+        page_dupes = 0
         for card in matched:
             cid = card.get("jk") or card.get("url")
             card_url = card.get("url", "")
             if card_url in existing_urls:
+                page_dupes += 1
                 print(f"  [DUP] Skipping known URL: {card.get('title', '')}")
                 continue
             if not any((c.get("jk") or c.get("url")) == cid for c in all_cards):
                 all_cards.append(card)
                 new_count += 1
+                page_new += 1
                 if new_count >= max_jobs:
                     break
+
+        print(f"  Indeed offset {start_offset} summary: {len(cards)} extracted, {len(matched)} role-matched, {page_dupes} dupes, {page_new} new → total {new_count}/{max_jobs}")
 
         print(f"  Collected {new_count} new matching jobs so far...")
         if new_count >= max_jobs:
@@ -1037,7 +1090,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     async with async_playwright() as p:
         # Use Firefox — it has a much better Cloudflare pass-rate than Chromium
         browser = await p.firefox.launch(
-            headless=True,
+            headless=False,
             args=["--width=1920", "--height=1080"],
         )
         context = await browser.new_context(
@@ -1047,8 +1100,8 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             geolocation={"latitude": 19.076, "longitude": 72.8777},
             permissions=["geolocation"],
             user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) "
-                "Gecko/20100101 Firefox/125.0"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) "
+                "Gecko/20100101 Firefox/128.0"
             ),
         )
 
@@ -1059,13 +1112,21 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
         # Warm up — visit homepage to acquire cookies / solve initial CF
         print("  Warming up Indeed session (Firefox + stealth)...")
-        if await _safe_goto(page, "https://in.indeed.com/", timeout=30000):
-            await _human_delay(3, 5)
-            if await _is_blocked(page):
-                print("  [WARN] Cloudflare on homepage. Waiting...")
-                await _wait_for_cloudflare(page, max_wait_s=60, label="homepage")
-        else:
-            print("  [WARN] Homepage warm-up failed.")
+        try:
+            if await _safe_goto(page, "https://in.indeed.com/", timeout=30000):
+                await _human_delay(4, 7)
+                page_title = await page.title()
+                print(f"  Indeed homepage loaded: title='{page_title}'")
+                if await _is_blocked(page):
+                    print("  [WARN] Indeed blocked by anti-bot mitigation on homepage. Waiting for Cloudflare...")
+                    if not await _wait_for_cloudflare(page, max_wait_s=60, label="homepage"):
+                        print("  [FAIL] Could not pass Indeed Cloudflare on homepage. Scraping may fail.")
+                else:
+                    print("  Indeed homepage OK — no Cloudflare detected.")
+            else:
+                print("  [WARN] Indeed homepage warm-up navigation failed.")
+        except Exception as e:
+            print(f"  [WARN] Indeed warm-up exception: {e}")
 
         # Scrape search results
         cards = await get_indeed_search_results(page, search_query, location, max_jobs, existing_urls=existing_urls)
