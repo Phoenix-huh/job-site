@@ -827,14 +827,12 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     if existing_urls is None:
         existing_urls = set()
 
-    api_key = os.getenv("RAPIDAPI_KEY")
+    api_key = os.getenv("RAPIDAPI_KEY", "").strip()
     if not api_key:
         print("  [WARN] RAPIDAPI_KEY not set — skipping Indeed (JSearch API).")
         return []
 
-    query = f"{search_query} jobs"
-    if location:
-        query = f"{query} in {location}"
+    url = "https://jsearch.p.rapidapi.com/search"
 
     headers = {
         "X-RapidAPI-Key": api_key,
@@ -846,36 +844,25 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     fetched = 0
 
     while fetched < max_jobs:
-        params = {
-            "query": query,
+        querystring = {
+            "query": f"{search_query} jobs",
             "page": str(page),
             "num_pages": "1",
         }
 
-        print(f"  [JSearch] Fetching page {page} for '{query}'")
+        print(f"  [JSearch] Fetching page {page} for '{search_query} jobs'")
 
         try:
-            resp = _requests.get(
-                "https://jsearch.p.rapidapi.com/search",
-                headers=headers,
-                params=params,
-                timeout=30,
-            )
-            resp.raise_for_status()
-        except _requests.exceptions.HTTPError as e:
-            print(f"  [JSearch] HTTP error: {e} — status {resp.status_code}")
-            break
+            response = _requests.get(url, headers=headers, params=querystring, timeout=15)
         except _requests.exceptions.RequestException as e:
             print(f"  [JSearch] Request failed: {e}")
             break
 
-        try:
-            payload = resp.json()
-        except (ValueError, json.JSONDecodeError):
-            print(f"  [JSearch] Invalid JSON response")
+        if response.status_code != 200:
+            print(f"[JSearch] Error {response.status_code}: {response.text}")
             break
 
-        data = payload.get("data") or []
+        data = response.json().get("data", [])
         if not data:
             print(f"  [JSearch] No results on page {page}.")
             break
