@@ -827,15 +827,15 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     if existing_urls is None:
         existing_urls = set()
 
-    api_key = os.getenv("RAPIDAPI_KEY", "").strip()
-    if not api_key:
-        print("  [WARN] RAPIDAPI_KEY not set — skipping Indeed (JSearch API).")
+    rapid_key = os.getenv("RAPIDAPI_KEY", "").strip()
+    if not rapid_key:
+        print("[JSearch Error] RAPIDAPI_KEY is not set in environment variables!")
         return []
 
     url = "https://jsearch.p.rapidapi.com/search"
 
     headers = {
-        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Key": rapid_key,
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
     }
 
@@ -844,7 +844,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     fetched = 0
 
     while fetched < max_jobs:
-        querystring = {
+        params = {
             "query": f"{search_query} jobs",
             "page": str(page),
             "num_pages": "1",
@@ -853,7 +853,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print(f"  [JSearch] Fetching page {page} for '{search_query} jobs'")
 
         try:
-            response = _requests.get(url, headers=headers, params=querystring, timeout=15)
+            response = _requests.get(url, headers=headers, params=params, timeout=15)
         except _requests.exceptions.RequestException as e:
             print(f"  [JSearch] Request failed: {e}")
             break

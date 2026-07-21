@@ -40,12 +40,22 @@ jobs:
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
             python -u backend/daily_scrape.py --max 20 2>&1 | tee scrape-jobs.log
         continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
 
       - name: Run daily internship scrape
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
             python -u backend/daily_scrape_internships.py --max 20 2>&1 | tee scrape-internships.log
         continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
 
       - name: Upload scrape logs
         if: always()
