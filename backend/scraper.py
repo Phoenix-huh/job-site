@@ -868,14 +868,30 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             print(f"[JSearch] Error {response.status_code}: {response.text}")
             return []
 
-        data = response.json().get("data", [])
-        if not data:
+        try:
+            res_data = response.json()
+        except (ValueError, json.JSONDecodeError):
+            print(f"[JSearch Warning] Invalid JSON response: {response.text[:200]}")
+            return []
+
+        if isinstance(res_data, str):
+            print(f"[JSearch Warning] API returned a string response instead of JSON object: {res_data}")
+            return []
+        if not isinstance(res_data, dict):
+            print(f"[JSearch Warning] Unexpected response type {type(res_data)}: {res_data}")
+            return []
+
+        jobs_list = res_data.get("data", [])
+        if not isinstance(jobs_list, list) or not jobs_list:
             print(f"  [JSearch] No results on page {page}.")
             break
 
-        for item in data:
+        for item in jobs_list:
             if fetched >= max_jobs:
                 break
+
+            if not isinstance(item, dict):
+                continue
 
             title = item.get("job_title", "").strip()
             company = item.get("employer_name", "").strip() or "Unknown"
