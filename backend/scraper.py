@@ -832,6 +832,13 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print("[JSearch Error] RAPIDAPI_KEY is empty or missing from environment!")
         return []
 
+    if location and location.strip():
+        query = f"{search_query} in {location.strip()}"
+    else:
+        query = f"{search_query} in India"
+
+    print(f"[JSearch] Querying: '{query}'")
+
     headers = {
         "x-rapidapi-key": api_key,
         "x-rapidapi-host": "jsearch.p.rapidapi.com",
@@ -844,13 +851,13 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
     while fetched < max_jobs:
         params = {
-            "query": f"{search_query} jobs",
+            "query": query,
             "page": str(page),
             "num_pages": "1",
             "date_posted": "all",
         }
 
-        print(f"  [JSearch] Fetching page {page} for '{search_query} jobs'")
+        print(f"  [JSearch] Fetching page {page} for '{query}'")
 
         try:
             response = _requests.get(
