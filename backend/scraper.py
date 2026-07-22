@@ -827,16 +827,14 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     if existing_urls is None:
         existing_urls = set()
 
-    rapid_key = os.getenv("RAPIDAPI_KEY", "").strip()
-    if not rapid_key:
-        print("[JSearch Error] RAPIDAPI_KEY is not set in environment variables!")
+    api_key = os.getenv("RAPIDAPI_KEY", "").strip()
+    if not api_key:
+        print("[JSearch Error] RAPIDAPI_KEY is empty or missing from environment!")
         return []
 
-    url = "https://jsearch.p.rapidapi.com/search"
-
     headers = {
-        "X-RapidAPI-Key": rapid_key,
-        "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+        "x-rapidapi-key": api_key,
+        "x-rapidapi-host": "jsearch.p.rapidapi.com",
     }
 
     jobs = []
@@ -853,14 +851,20 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print(f"  [JSearch] Fetching page {page} for '{search_query} jobs'")
 
         try:
-            response = _requests.get(url, headers=headers, params=params, timeout=15)
+            response = _requests.get(
+                "https://jsearch.p.rapidapi.com/search",
+                headers=headers,
+                params=params,
+                timeout=15,
+            )
         except _requests.exceptions.RequestException as e:
             print(f"  [JSearch] Request failed: {e}")
             break
 
         if response.status_code != 200:
+            print(f"[JSearch Debug] Key present: {bool(api_key)}, Host header: {headers['x-rapidapi-host']}")
             print(f"[JSearch] Error {response.status_code}: {response.text}")
-            break
+            return []
 
         data = response.json().get("data", [])
         if not data:
