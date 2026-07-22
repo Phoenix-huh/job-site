@@ -833,11 +833,11 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         return []
 
     if location and location.strip():
-        query = f"{search_query} in {location.strip()}"
+        primary_query = f"{search_query} {location.strip()}"
     else:
-        query = f"{search_query} in India"
+        primary_query = search_query
 
-    print(f"[JSearch] Querying: '{query}'")
+    print(f"[JSearch] Querying: '{primary_query}'")
 
     headers = {
         "x-rapidapi-key": api_key,
@@ -845,22 +845,16 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         "Content-Type": "application/json",
     }
 
-    jobs = []
-    page = 1
-    fetched = 0
-
-    while fetched < max_jobs:
+    def _jsearch_request(query_str):
         params = {
-            "query": query,
-            "page": str(page),
+            "query": query_str,
+            "page": "1",
             "num_pages": "1",
             "date_posted": "all",
         }
-
-        print(f"  [JSearch] Fetching page {page} for '{query}'")
-
+        print(f"  [JSearch] Fetching page 1 for '{query_str}'")
         try:
-            response = _requests.get(
+            resp = _requests.get(
                 "https://jsearch.p.rapidapi.com/search-v2",
                 headers=headers,
                 params=params,
@@ -868,37 +862,50 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             )
         except _requests.exceptions.RequestException as e:
             print(f"  [JSearch] Request failed: {e}")
-            break
+            return None
 
-        if response.status_code != 200:
+        if resp.status_code != 200:
             print(f"[JSearch Debug] Key present: {bool(api_key)}, Host header: {headers['x-rapidapi-host']}")
-            print(f"[JSearch] Error {response.status_code}: {response.text}")
-            return []
+            print(f"[JSearch] Error {resp.status_code}: {resp.text}")
+            return None
 
         try:
-            res_data = response.json()
+            res_data = resp.json()
         except (ValueError, json.JSONDecodeError):
-            print(f"[JSearch Warning] Invalid JSON response: {response.text[:200]}")
-            return []
+            print(f"[JSearch Warning] Invalid JSON response: {resp.text[:200]}")
+            return None
 
         if isinstance(res_data, str):
             print(f"[JSearch Warning] API returned a string response instead of JSON object: {res_data}")
-            return []
+            return None
         if not isinstance(res_data, dict):
             print(f"[JSearch Warning] Unexpected response type {type(res_data)}: {res_data}")
-            return []
+            return None
 
         jobs_list = res_data.get("data", [])
-        if not isinstance(jobs_list, list) or not jobs_list:
-            print(f"  [JSearch] No results on page {page}.")
+        if not isinstance(jobs_list, list):
+            return []
+        return jobs_list
+
+    jobs_list = _jsearch_request(primary_query)
+
+    if (not jobs_list) and location and location.strip():
+        print(f"[JSearch] 0 results for '{primary_query}'. Retrying with fallback query: '{search_query}'...")
+        jobs_list = _jsearch_request(search_query) or []
+
+    if not jobs_list:
+        print(f"  [JSearch] No results for '{primary_query}'.")
+        return []
+
+    jobs = []
+    fetched = 0
+
+    for item in jobs_list:
+        if fetched >= max_jobs:
             break
 
-        for item in jobs_list:
-            if fetched >= max_jobs:
-                break
-
-            if not isinstance(item, dict):
-                continue
+        if not isinstance(item, dict):
+            continue
 
             title = item.get("job_title", "").strip()
             company = item.get("employer_name", "").strip() or "Unknown"
@@ -963,8 +970,6 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             })
             fetched += 1
             print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
-
-        page += 1
 
     print(f"  [JSearch] Total fetched: {len(jobs)} listings for '{search_query}'")
     return jobs
