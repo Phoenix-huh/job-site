@@ -835,6 +835,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     headers = {
         "x-rapidapi-key": api_key,
         "x-rapidapi-host": "jsearch.p.rapidapi.com",
+        "Content-Type": "application/json",
     }
 
     jobs = []
@@ -846,13 +847,14 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             "query": f"{search_query} jobs",
             "page": str(page),
             "num_pages": "1",
+            "date_posted": "all",
         }
 
         print(f"  [JSearch] Fetching page {page} for '{search_query} jobs'")
 
         try:
             response = _requests.get(
-                "https://jsearch.p.rapidapi.com/search",
+                "https://jsearch.p.rapidapi.com/search-v2",
                 headers=headers,
                 params=params,
                 timeout=15,
