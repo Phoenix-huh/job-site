@@ -928,50 +928,50 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
         city = item.get("job_city", "") or ""
         country = item.get("job_country", "") or ""
-            loc_str = f"{city}, {country}".strip(", ") if city or country else "Unknown"
+        loc_str = f"{city}, {country}".strip(", ") if city or country else "Unknown"
 
-            email = None
-            emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', description)
-            if emails:
-                email = emails[0]
+        email = None
+        emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', description)
+        if emails:
+            email = emails[0]
 
-            loc = extract_city_name(loc_str)
-            job_type = infer_job_type(title, description)
-            workplace = infer_workplace_type(loc, description)
+        loc = extract_city_name(loc_str)
+        job_type = infer_job_type(title, description)
+        workplace = infer_workplace_type(loc, description)
 
-            posted_raw = item.get("job_posted_at_datetime_utc") or item.get("job_posted_date") or ""
-            if isinstance(posted_raw, str) and posted_raw:
-                posted_date = parse_relative_date(posted_raw)
-            elif hasattr(posted_raw, "strftime"):
-                posted_date = posted_raw.strftime("%Y-%m-%d")
-            else:
-                posted_date = datetime.today().strftime("%Y-%m-%d")
+        posted_raw = item.get("job_posted_at_datetime_utc") or item.get("job_posted_date") or ""
+        if isinstance(posted_raw, str) and posted_raw:
+            posted_date = parse_relative_date(posted_raw)
+        elif hasattr(posted_raw, "strftime"):
+            posted_date = posted_raw.strftime("%Y-%m-%d")
+        else:
+            posted_date = datetime.today().strftime("%Y-%m-%d")
 
-            salary_min = item.get("job_min_salary")
-            salary_max = item.get("job_max_salary")
-            salary_currency = item.get("job_salary_currency", "")
-            if salary_min and salary_max:
-                salary = f"{salary_currency}{salary_min} - {salary_currency}{salary_max}".strip()
-            else:
-                salary = "Not disclosed"
+        salary_min = item.get("job_min_salary")
+        salary_max = item.get("job_max_salary")
+        salary_currency = item.get("job_salary_currency", "")
+        if salary_min and salary_max:
+            salary = f"{salary_currency}{salary_min} - {salary_currency}{salary_max}".strip()
+        else:
+            salary = "Not disclosed"
 
-            jobs.append({
-                "title": title,
-                "company": company,
-                "url": apply_url,
-                "description": description or "No description available",
-                "email": email,
-                "location": loc,
-                "country": country or "India",
-                "platform": "Indeed (JSearch API)",
-                "job_type": job_type,
-                "workplace_type": workplace,
-                "posted_date": posted_date,
-                "salary": salary,
-                "skills": [],
-            })
-            fetched += 1
-            print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
+        jobs.append({
+            "title": title,
+            "company": company,
+            "url": apply_url,
+            "description": description or "No description available",
+            "email": email,
+            "location": loc,
+            "country": country or "India",
+            "platform": "Indeed (JSearch API)",
+            "job_type": job_type,
+            "workplace_type": workplace,
+            "posted_date": posted_date,
+            "salary": salary,
+            "skills": [],
+        })
+        fetched += 1
+        print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
 
     print(f"  [JSearch] Total fetched: {len(jobs)} listings for '{search_query}'")
     return jobs
