@@ -10,10 +10,11 @@ from scraper import scrape_indeed
 
 async def main():
     role = "Software Engineer"
-    print(f"[test_indeed] Running scrape_indeed('{role}') ...")
+    location = "India"
+    print(f"[test_indeed] Running scrape_indeed('{role}', '{location}') ...")
 
     try:
-        results = await scrape_indeed(role)
+        results = await scrape_indeed(role, location)
     except Exception as exc:
         print(f"[test_indeed] FAIL — scrape_indeed raised: {exc}")
         sys.exit(1)

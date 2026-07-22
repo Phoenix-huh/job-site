@@ -833,9 +833,9 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         return []
 
     if location and location.strip():
-        primary_query = f"{search_query} {location.strip()}"
+        primary_query = f"{search_query} jobs in {location.strip()}"
     else:
-        primary_query = search_query
+        primary_query = f"{search_query} jobs in India"
 
     print(f"[JSearch] Querying: '{primary_query}'")
 
@@ -850,6 +850,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             "query": query_str,
             "page": "1",
             "num_pages": "1",
+            "country": "in",
             "date_posted": "all",
         }
         print(f"  [JSearch] Fetching page 1 for '{query_str}'")
@@ -890,8 +891,9 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     jobs_list = _jsearch_request(primary_query)
 
     if (not jobs_list) and location and location.strip():
-        print(f"[JSearch] 0 results for '{primary_query}'. Retrying with fallback query: '{search_query}'...")
-        jobs_list = _jsearch_request(search_query) or []
+        fallback_query = f"{search_query} jobs in India"
+        print(f"[JSearch] 0 results for '{primary_query}'. Retrying with fallback query: '{fallback_query}'...")
+        jobs_list = _jsearch_request(fallback_query) or []
 
     if not jobs_list:
         print(f"  [JSearch] No results for '{primary_query}'.")
@@ -907,25 +909,25 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         if not isinstance(item, dict):
             continue
 
-            title = item.get("job_title", "").strip()
-            company = item.get("employer_name", "").strip() or "Unknown"
-            description = item.get("job_description", "").strip()
-            apply_url = item.get("job_apply_link", "").strip()
-            apply_url = apply_url.split("?")[0] if apply_url else ""
+        title = item.get("job_title", "").strip()
+        company = item.get("employer_name", "").strip() or "Unknown"
+        description = item.get("job_description", "").strip()
+        apply_url = item.get("job_apply_link", "").strip()
+        apply_url = apply_url.split("?")[0] if apply_url else ""
 
-            if not title or not apply_url:
-                continue
+        if not title or not apply_url:
+            continue
 
-            if apply_url in existing_urls:
-                print(f"  [DUP] Skipping known JSearch URL: {title}")
-                continue
+        if apply_url in existing_urls:
+            print(f"  [DUP] Skipping known JSearch URL: {title}")
+            continue
 
-            if not title_matches_search(title, search_query):
-                print(f"  Skipping title mismatch: {title}")
-                continue
+        if not title_matches_search(title, search_query):
+            print(f"  Skipping title mismatch: {title}")
+            continue
 
-            city = item.get("job_city", "") or ""
-            country = item.get("job_country", "") or ""
+        city = item.get("job_city", "") or ""
+        country = item.get("job_country", "") or ""
             loc_str = f"{city}, {country}".strip(", ") if city or country else "Unknown"
 
             email = None
