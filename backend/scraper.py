@@ -848,7 +848,6 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
     def _jsearch_request(query_str):
         params = {
             "query": query_str,
-            "page": "1",
             "num_pages": "1",
             "country": "in",
             "date_posted": "all",
@@ -859,7 +858,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
                 "https://jsearch.p.rapidapi.com/search-v2",
                 headers=headers,
                 params=params,
-                timeout=15,
+                timeout=30,
             )
         except _requests.exceptions.RequestException as e:
             print(f"  [JSearch] Request failed: {e}")
