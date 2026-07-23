@@ -833,6 +833,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         return []
 
     loc = location if location and location.strip() else "USA"
+    country_code = "in" if "india" in loc.lower() else "us"
     payload = {
         "scraper": {
             "maxRows": 20,
@@ -840,7 +841,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             "location": loc,
             "sort": "relevance",
             "fromDays": "14",
-            "country": "us",
+            "country": country_code,
         }
     }
 
@@ -863,27 +864,22 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print(f"[Indeed API Error] Request failed: {e}")
         return []
 
-    if response.status_code != 200:
+    if response.status_code not in (200, 201):
         print(f"[Indeed API Error {response.status_code}]: {response.text}")
         return []
 
     try:
-        res_data = response.json()
+        res_json = response.json()
     except (ValueError, json.JSONDecodeError):
         print(f"[Indeed API Warning] Invalid JSON response: {response.text[:200]}")
         return []
 
-    if isinstance(res_data, dict):
-        jobs_list = res_data.get("jobs", res_data.get("data", []))
-    elif isinstance(res_data, list):
-        jobs_list = res_data
+    if isinstance(res_json, dict) and "returnvalue" in res_json:
+        jobs_list = res_json.get("returnvalue", {}).get("data", [])
+    elif isinstance(res_json, dict):
+        jobs_list = res_json.get("data", [])
     else:
-        print(f"[Indeed API Warning] Unexpected response type {type(res_data)}")
-        return []
-
-    if not isinstance(jobs_list, list):
-        print(f"[Indeed API Warning] Job items not a list: {type(jobs_list)}")
-        return []
+        jobs_list = []
 
     if not jobs_list:
         print(f"[Indeed API] No results for role='{search_query}', location='{loc}'.")
@@ -903,11 +899,17 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             skipped_invalid += 1
             continue
 
-        title = (item.get("title") or item.get("jobTitle") or "").strip()
-        company = (item.get("companyName") or item.get("company") or "").strip() or "Unknown"
-        item_loc = (item.get("location") or item.get("formattedLocation") or "").strip()
-        description = (item.get("description") or item.get("snippet") or "").strip()
-        apply_url = (item.get("url") or item.get("jobUrl") or "").strip()
+        title = (item.get("title") or "").strip()
+        company = (item.get("companyName") or "").strip() or "Unknown"
+
+        raw_loc = item.get("location")
+        if isinstance(raw_loc, dict):
+            item_loc = (raw_loc.get("formattedAddressShort") or f"{raw_loc.get('city', '')}, {raw_loc.get('countryCode', '')}").strip(", ")
+        else:
+            item_loc = str(raw_loc or "").strip()
+
+        description = (item.get("descriptionText") or item.get("descriptionHtml") or "").strip()
+        apply_url = (item.get("jobUrl") or item.get("applyUrl") or "").strip()
         apply_url = apply_url.split("?")[0] if apply_url else ""
 
         if not title or not apply_url:
@@ -938,7 +940,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         job_type = infer_job_type(title, description)
         workplace = infer_workplace_type(loc, description)
 
-        posted_raw = item.get("date") or item.get("postedDate") or item.get("postedAt") or ""
+        posted_raw = item.get("datePublished") or item.get("age") or ""
         if isinstance(posted_raw, str) and posted_raw:
             posted_date = parse_relative_date(posted_raw)
         elif hasattr(posted_raw, "strftime"):
@@ -946,7 +948,11 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         else:
             posted_date = datetime.today().strftime("%Y-%m-%d")
 
-        salary = item.get("salary") or item.get("salaryText") or "Not disclosed"
+        raw_salary = item.get("salary")
+        if isinstance(raw_salary, dict):
+            salary = raw_salary.get("salaryText", "Not disclosed")
+        else:
+            salary = raw_salary or "Not disclosed"
 
         jobs.append({
             "title": title,
@@ -955,7 +961,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             "description": description or "No description available",
             "email": email,
             "location": loc,
-            "country": "US",
+            "country": "India" if country_code == "in" else "US",
             "platform": "Indeed",
             "job_type": job_type,
             "workplace_type": workplace,
