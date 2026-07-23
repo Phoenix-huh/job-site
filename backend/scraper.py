@@ -909,8 +909,16 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             item_loc = str(raw_loc or "").strip()
 
         description = (item.get("descriptionText") or item.get("descriptionHtml") or "").strip()
-        apply_url = (item.get("jobUrl") or item.get("applyUrl") or "").strip()
-        apply_url = apply_url.split("?")[0] if apply_url else ""
+
+        job_key = item.get("jobKey") or item.get("id") or ""
+        raw_url = (item.get("jobUrl") or item.get("applyUrl") or "").strip()
+        if not raw_url or raw_url.rstrip("/") == "https://www.indeed.com/viewjob":
+            if job_key:
+                apply_url = f"https://www.indeed.com/viewjob?jk={job_key}"
+            else:
+                apply_url = raw_url if raw_url else f"https://www.indeed.com/viewjob?ref={hash(company + title)}"
+        else:
+            apply_url = raw_url
 
         if not title or not apply_url:
             skipped_invalid += 1

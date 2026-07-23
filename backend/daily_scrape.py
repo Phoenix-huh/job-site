@@ -17,6 +17,7 @@ from database import SessionLocal, engine
 import models
 from scoring_engine import analyze_job
 from scraper import scrape_naukri, scrape_indeed, scrape_linkedin, clean_skills, title_matches_search, normalize_base_role, build_scrape_query
+from sqlalchemy.exc import IntegrityError
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -162,9 +163,15 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                     salary=jd.get("salary"),
                     skills=clean_skills(jd.get("skills") or [], jd.get("title", ""), base_role)
                 )
-                db.add(job)
-                db.commit()
-                db.refresh(job)
+                try:
+                    db.add(job)
+                    db.commit()
+                    db.refresh(job)
+                except IntegrityError:
+                    db.rollback()
+                    print(f"[DB Skip] Job already exists with URL: {jd['url']}")
+                    total_skipped += 1
+                    continue
                 
                 score_data = analyze_job(job.description, job.company, job.email)
                 score = models.Score(
