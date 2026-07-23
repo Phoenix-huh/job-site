@@ -823,85 +823,70 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
 # ---------------------------------------------------------------------------
 
 async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
-    """Fetch Indeed listings via JSearch API. Returns list of job dicts."""
+    """Fetch job listings via Indeed Scraper API (RapidAPI). Returns list of job dicts."""
     if existing_urls is None:
         existing_urls = set()
 
     api_key = os.getenv("RAPIDAPI_KEY", "").strip()
     if not api_key:
-        print("[JSearch Error] RAPIDAPI_KEY is empty or missing from environment!")
+        print("[Indeed API Error] RAPIDAPI_KEY is empty or missing from environment!")
         return []
 
-    if location and location.strip():
-        primary_query = f"{search_query} jobs in {location.strip()}"
-    else:
-        primary_query = f"{search_query} jobs in India"
-
-    print(f"[JSearch] Querying: '{primary_query}'")
-
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "jsearch.p.rapidapi.com",
-        "Content-Type": "application/json",
+    loc = location if location and location.strip() else "USA"
+    payload = {
+        "scraper": {
+            "maxRows": 20,
+            "query": search_query,
+            "location": loc,
+            "sort": "relevance",
+            "fromDays": "14",
+            "country": "us",
+        }
     }
 
-    def _jsearch_request(query_str):
-        params = {
-            "query": query_str,
-            "num_pages": "1",
-            "country": "in",
-            "date_posted": "all",
-        }
-        print(f"  [JSearch] Fetching page 1 for '{query_str}'")
-        try:
-            resp = _requests.get(
-                "https://jsearch.p.rapidapi.com/search-v2",
-                headers=headers,
-                params=params,
-                timeout=30,
-            )
-        except _requests.exceptions.RequestException as e:
-            print(f"  [JSearch] Request failed: {e}")
-            return None
+    headers = {
+        "Content-Type": "application/json",
+        "x-rapidapi-host": "indeed-scraper-api.p.rapidapi.com",
+        "x-rapidapi-key": api_key,
+    }
 
-        if resp.status_code != 200:
-            print(f"[JSearch Debug] Key present: {bool(api_key)}, Host header: {headers['x-rapidapi-host']}")
-            print(f"[JSearch] Error {resp.status_code}: {resp.text}")
-            return None
+    print(f"[Indeed API] Querying: role='{search_query}', location='{loc}'")
 
-        try:
-            res_data = resp.json()
-        except (ValueError, json.JSONDecodeError):
-            print(f"[JSearch Warning] Invalid JSON response: {resp.text[:200]}")
-            return None
+    try:
+        response = _requests.post(
+            "https://indeed-scraper-api.p.rapidapi.com/api/job",
+            headers=headers,
+            json=payload,
+            timeout=20,
+        )
+    except _requests.exceptions.RequestException as e:
+        print(f"[Indeed API Error] Request failed: {e}")
+        return []
 
-        if isinstance(res_data, str):
-            print(f"[JSearch Warning] API returned a string response instead of JSON object: {res_data}")
-            return None
-        if not isinstance(res_data, dict):
-            print(f"[JSearch Warning] Unexpected response type {type(res_data)}: {res_data}")
-            return None
+    if response.status_code != 200:
+        print(f"[Indeed API Error {response.status_code}]: {response.text}")
+        return []
 
-        data = res_data.get("data", [])
-        if isinstance(data, dict):
-            jobs_list = data.get("jobs", [])
-        elif isinstance(data, list):
-            jobs_list = data
-        else:
-            return []
-        if not isinstance(jobs_list, list):
-            return []
-        return jobs_list
+    try:
+        res_data = response.json()
+    except (ValueError, json.JSONDecodeError):
+        print(f"[Indeed API Warning] Invalid JSON response: {response.text[:200]}")
+        return []
 
-    jobs_list = _jsearch_request(primary_query)
+    if isinstance(res_data, dict):
+        jobs_list = res_data.get("jobs", res_data.get("data", []))
+    elif isinstance(res_data, list):
+        jobs_list = res_data
+    else:
+        print(f"[Indeed API Warning] Unexpected response type {type(res_data)}")
+        return []
 
-    if (not jobs_list) and location and location.strip():
-        fallback_query = f"{search_query} jobs in India"
-        print(f"[JSearch] 0 results for '{primary_query}'. Retrying with fallback query: '{fallback_query}'...")
-        jobs_list = _jsearch_request(fallback_query) or []
+    if not isinstance(jobs_list, list):
+        print(f"[Indeed API Warning] Job items not a list: {type(jobs_list)}")
+        return []
 
     if not jobs_list:
-        print(f"  [JSearch] No results for '{primary_query}'.")
+        print(f"[Indeed API] No results for role='{search_query}', location='{loc}'.")
         return []
 
     jobs = []
@@ -918,19 +903,25 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             skipped_invalid += 1
             continue
 
-        title = item.get("job_title", "").strip()
-        company = item.get("employer_name", "").strip() or "Unknown"
-        description = item.get("job_description", "").strip()
-        apply_url = item.get("job_apply_link", "").strip()
+        title = (item.get("title") or item.get("jobTitle") or "").strip()
+        company = (item.get("companyName") or item.get("company") or "").strip() or "Unknown"
+        item_loc = (item.get("location") or item.get("formattedLocation") or "").strip()
+        description = (item.get("description") or item.get("snippet") or "").strip()
+        apply_url = (item.get("url") or item.get("jobUrl") or "").strip()
         apply_url = apply_url.split("?")[0] if apply_url else ""
 
         if not title or not apply_url:
             skipped_invalid += 1
             continue
 
+        if "linkedin.com" in apply_url.lower():
+            skipped_dup += 1
+            print(f"  [DUP] Skipping LinkedIn URL (handled by LinkedIn scraper): {title}")
+            continue
+
         if apply_url in existing_urls:
             skipped_dup += 1
-            print(f"  [DUP] Skipping known JSearch URL: {title}")
+            print(f"  [DUP] Skipping known Indeed URL: {title}")
             continue
 
         if not title_matches_search(title, search_query):
@@ -938,20 +929,16 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             print(f"  [SKIP] Title mismatch: {title}")
             continue
 
-        city = item.get("job_city", "") or ""
-        country = item.get("job_country", "") or ""
-        loc_str = f"{city}, {country}".strip(", ") if city or country else "Unknown"
-
         email = None
         emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', description)
         if emails:
             email = emails[0]
 
-        loc = extract_city_name(loc_str)
+        loc = extract_city_name(item_loc) if item_loc else "Unknown"
         job_type = infer_job_type(title, description)
         workplace = infer_workplace_type(loc, description)
 
-        posted_raw = item.get("job_posted_at_datetime_utc") or item.get("job_posted_date") or ""
+        posted_raw = item.get("date") or item.get("postedDate") or item.get("postedAt") or ""
         if isinstance(posted_raw, str) and posted_raw:
             posted_date = parse_relative_date(posted_raw)
         elif hasattr(posted_raw, "strftime"):
@@ -959,13 +946,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         else:
             posted_date = datetime.today().strftime("%Y-%m-%d")
 
-        salary_min = item.get("job_min_salary")
-        salary_max = item.get("job_max_salary")
-        salary_currency = item.get("job_salary_currency", "")
-        if salary_min and salary_max:
-            salary = f"{salary_currency}{salary_min} - {salary_currency}{salary_max}".strip()
-        else:
-            salary = "Not disclosed"
+        salary = item.get("salary") or item.get("salaryText") or "Not disclosed"
 
         jobs.append({
             "title": title,
@@ -974,8 +955,8 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             "description": description or "No description available",
             "email": email,
             "location": loc,
-            "country": country or "India",
-            "platform": "Indeed (JSearch API)",
+            "country": "US",
+            "platform": "Indeed",
             "job_type": job_type,
             "workplace_type": workplace,
             "posted_date": posted_date,
@@ -986,7 +967,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
 
     skipped_total = skipped_dup + skipped_mismatch + skipped_invalid
-    print(f"  [JSearch] Fetched: {fetched}/{max_jobs} | Skipped: {skipped_total} (dup={skipped_dup}, mismatch={skipped_mismatch}, invalid={skipped_invalid}) for '{search_query}'")
+    print(f"  [Indeed API] Fetched: {fetched}/{max_jobs} | Skipped: {skipped_total} (dup={skipped_dup}, mismatch={skipped_mismatch}, invalid={skipped_invalid}) for '{search_query}'")
     return jobs
 
 
