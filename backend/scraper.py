@@ -882,7 +882,13 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             print(f"[JSearch Warning] Unexpected response type {type(res_data)}: {res_data}")
             return None
 
-        jobs_list = res_data.get("data", [])
+        data = res_data.get("data", [])
+        if isinstance(data, dict):
+            jobs_list = data.get("jobs", [])
+        elif isinstance(data, list):
+            jobs_list = data
+        else:
+            return []
         if not isinstance(jobs_list, list):
             return []
         return jobs_list
