@@ -906,12 +906,16 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
     jobs = []
     fetched = 0
+    skipped_dup = 0
+    skipped_mismatch = 0
+    skipped_invalid = 0
 
     for item in jobs_list:
         if fetched >= max_jobs:
             break
 
         if not isinstance(item, dict):
+            skipped_invalid += 1
             continue
 
         title = item.get("job_title", "").strip()
@@ -921,14 +925,17 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         apply_url = apply_url.split("?")[0] if apply_url else ""
 
         if not title or not apply_url:
+            skipped_invalid += 1
             continue
 
         if apply_url in existing_urls:
+            skipped_dup += 1
             print(f"  [DUP] Skipping known JSearch URL: {title}")
             continue
 
         if not title_matches_search(title, search_query):
-            print(f"  Skipping title mismatch: {title}")
+            skipped_mismatch += 1
+            print(f"  [SKIP] Title mismatch: {title}")
             continue
 
         city = item.get("job_city", "") or ""
@@ -978,7 +985,8 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         fetched += 1
         print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
 
-    print(f"  [JSearch] Total fetched: {len(jobs)} listings for '{search_query}'")
+    skipped_total = skipped_dup + skipped_mismatch + skipped_invalid
+    print(f"  [JSearch] Fetched: {fetched}/{max_jobs} | Skipped: {skipped_total} (dup={skipped_dup}, mismatch={skipped_mismatch}, invalid={skipped_invalid}) for '{search_query}'")
     return jobs
 
 
