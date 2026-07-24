@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, JSON, ForeignKey, Boolean, Date
+from sqlalchemy import Column, Integer, String, Text, Float, JSON, ForeignKey, Boolean, Date, DateTime
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -56,3 +56,10 @@ class UserJobInteraction(Base):
     applied = Column(Boolean, default=False)
     rejected = Column(Boolean, default=False)
     created_at = Column(String, default=lambda: datetime.utcnow().isoformat())
+
+class ArchivedJobLink(Base):
+    __tablename__ = "archived_job_links"
+
+    url = Column(String, primary_key=True, index=True)
+    posted_date = Column(Date, index=True, nullable=True)
+    archived_at = Column(DateTime, default=lambda: datetime.utcnow())

@@ -734,10 +734,12 @@ def parse_linkedin_date(raw: str) -> str:
     return today_str
 
 
-async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
+async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None, archived_urls=None):
     """Main scraping function. Returns list of job dicts."""
     if existing_urls is None:
         existing_urls = set()
+    if archived_urls is None:
+        archived_urls = set()
     jobs = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -778,6 +780,33 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
                 print(f"  Skipping title mismatch: {card.get('title', '')}")
                 continue
 
+            if card["url"] in archived_urls:
+                print(f"  [Archive Skip] URL in archive: {card.get('title', '')}")
+                continue
+
+            parsed_date = parse_relative_date(card.get("posted_date", "Just Posted"))
+            from database import is_job_too_old
+            if is_job_too_old(parsed_date, max_days=90):
+                print(f"  [Archive Skip] Job URL is older than 3 months: {card['url']}")
+                archived_urls.add(card["url"])
+                jobs.append({
+                    "title": card["title"],
+                    "company": card["company"],
+                    "url": card["url"],
+                    "description": "",
+                    "email": None,
+                    "location": extract_city_name(card.get("location", "")),
+                    "country": "India",
+                    "platform": "Naukri",
+                    "job_type": "Archived",
+                    "workplace_type": "",
+                    "posted_date": parsed_date,
+                    "salary": card.get("salary", "Not disclosed"),
+                    "skills": [],
+                    "_archived": True,
+                })
+                continue
+
             # Visit each job page to get full description
             if i > 0:
                 await asyncio.sleep(random.uniform(3, 6))
@@ -795,7 +824,6 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
             job_type = infer_job_type(card["title"], desc)
             workplace = infer_workplace_type(loc, desc)
             
-            raw_date = card.get("posted_date", "Just Posted")
             jobs.append({
                 "title": card["title"],
                 "company": card["company"],
@@ -807,7 +835,7 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
                 "platform": "Naukri",
                 "job_type": job_type,
                 "workplace_type": workplace,
-                "posted_date": parse_relative_date(raw_date),
+                "posted_date": parsed_date,
                 "salary": card.get("salary", "Not disclosed"),
                 "skills": clean_skills(card.get("skills", []), card["title"])
             })
@@ -822,10 +850,12 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
 # Indeed Scraper — JSearch API (RapidAPI)
 # ---------------------------------------------------------------------------
 
-async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None):
+async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None, archived_urls=None):
     """Fetch job listings via Indeed Scraper API (RapidAPI). Returns list of job dicts."""
     if existing_urls is None:
         existing_urls = set()
+    if archived_urls is None:
+        archived_urls = set()
 
     api_key = os.getenv("RAPIDAPI_KEY", "").strip()
     if not api_key:
@@ -941,6 +971,12 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             print(f"  [Skip Mismatch] Title does not match '{search_query}': {title}")
             continue
 
+        # ── Check: Archived URL / 3-month age exclusion ──
+        if apply_url in archived_urls:
+            skipped_dup += 1
+            print(f"  [Archive Skip] URL in archive: {title}")
+            continue
+
         # ── All checks passed — safe to enrich and count ──
         batch_urls.add(apply_url)
 
@@ -974,6 +1010,28 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             salary = raw_salary.get("salaryText", "Not disclosed")
         else:
             salary = raw_salary or "Not disclosed"
+
+        from database import is_job_too_old
+        if is_job_too_old(posted_date, max_days=90):
+            print(f"  [Archive Skip] Job URL is older than 3 months: {apply_url}")
+            archived_urls.add(apply_url)
+            valid_jobs.append({
+                "title": title,
+                "company": company,
+                "url": apply_url,
+                "description": "",
+                "email": None,
+                "location": loc,
+                "country": "India" if country_code == "in" else "US",
+                "platform": "Indeed",
+                "job_type": "Archived",
+                "workplace_type": "",
+                "posted_date": posted_date,
+                "salary": salary,
+                "skills": [],
+                "_archived": True,
+            })
+            continue
 
         valid_jobs.append({
             "title": title,
@@ -1193,10 +1251,12 @@ async def get_linkedin_job_description(page, url):
         return ""
 
 
-async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None, internships: bool = False):
+async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int = 10, existing_urls=None, internships: bool = False, archived_urls=None):
     """Scrape linkedin.com/jobs for listings. Returns list of job dicts matching our schema."""
     if existing_urls is None:
         existing_urls = set()
+    if archived_urls is None:
+        archived_urls = set()
     jobs = []
 
     async with async_playwright() as p:
@@ -1248,6 +1308,10 @@ async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int =
                 print(f"  Skipping title mismatch: {card.get('title', '')}")
                 continue
 
+            if card["url"] in archived_urls:
+                print(f"  [Archive Skip] URL in archive: {card.get('title', '')}")
+                continue
+
             if i > 0:
                 await asyncio.sleep(random.uniform(1.5, 3.0))
 
@@ -1266,6 +1330,29 @@ async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int =
 
             raw_date = card.get("posted_date_raw", "")
             parsed_date = parse_linkedin_date(raw_date) if raw_date else parse_relative_date("Just Posted")
+
+            from database import is_job_too_old
+            if is_job_too_old(parsed_date, max_days=90):
+                print(f"  [Archive Skip] Job URL is older than 3 months: {card['url']}")
+                archived_urls.add(card["url"])
+                jobs.append({
+                    "title": card["title"],
+                    "company": card["company"],
+                    "url": card["url"],
+                    "description": "",
+                    "email": None,
+                    "location": loc,
+                    "country": "India",
+                    "platform": "LinkedIn",
+                    "job_type": "Archived",
+                    "workplace_type": "",
+                    "posted_date": parsed_date,
+                    "salary": card.get("salary", "Not disclosed"),
+                    "skills": [],
+                    "_archived": True,
+                })
+                continue
+
             jobs.append({
                 "title": card["title"],
                 "company": card["company"],

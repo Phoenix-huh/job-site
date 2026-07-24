@@ -29,8 +29,50 @@ def get_db():
         db.close()
 
 
+def load_archived_urls():
+    """Load all URLs from archived_job_links for fast pre-scrape exclusion."""
+    import models
+    db = SessionLocal()
+    try:
+        urls = set(row[0] for row in db.query(models.ArchivedJobLink.url).all() if row[0])
+        print(f"[ARCHIVE] Loaded {len(urls)} archived job URLs for exclusion")
+        return urls
+    finally:
+        db.close()
+
+
+def archive_job_url(url, posted_date):
+    """Insert a URL into archived_job_links (ON CONFLICT DO NOTHING)."""
+    import models
+    db = SessionLocal()
+    try:
+        existing = db.query(models.ArchivedJobLink).filter(models.ArchivedJobLink.url == url).first()
+        if not existing:
+            db.add(models.ArchivedJobLink(url=url, posted_date=posted_date))
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+def is_job_too_old(posted_date_str, max_days=90):
+    """Return True if posted_date is older than max_days from today."""
+    from datetime import date, timedelta
+    if not posted_date_str:
+        return False
+    try:
+        if isinstance(posted_date_str, date):
+            posted = posted_date_str
+        else:
+            posted = date.fromisoformat(str(posted_date_str)[:10])
+        return posted < (date.today() - timedelta(days=max_days))
+    except (ValueError, TypeError):
+        return False
+
+
 def post_scrape_cleanup():
-    """Post-scrape housekeeping: deduplicate by URL, expire stale listings, release sessions."""
+    """Post-scrape housekeeping: deduplicate, expire stale listings, 6-month purge, release sessions."""
     from datetime import date, timedelta
     import models
 
@@ -52,7 +94,6 @@ def post_scrape_cleanup():
                 .order_by(models.Job.id)
                 .all()
             )
-            keep = rows[0]
             for row in rows[1:]:
                 db.query(models.Score).filter(models.Score.job_id == row.id).delete(synchronize_session="fetch")
                 db.delete(row)
@@ -61,19 +102,39 @@ def post_scrape_cleanup():
             db.commit()
             print(f"[CLEANUP] Removed {removed_dupes} duplicate job rows")
 
-        cutoff = date.today() - timedelta(days=90)
+        cutoff_90 = date.today() - timedelta(days=90)
         stale = db.query(models.Job).filter(
             models.Job.posted_date != None,
-            models.Job.posted_date < cutoff,
+            models.Job.posted_date < cutoff_90,
         ).all()
         if stale:
             stale_ids = [j.id for j in stale]
             db.query(models.Score).filter(models.Score.job_id.in_(stale_ids)).delete(synchronize_session="fetch")
             db.query(models.Job).filter(models.Job.id.in_(stale_ids)).delete(synchronize_session="fetch")
             db.commit()
-            print(f"[CLEANUP] Expired {len(stale)} stale listings (older than {cutoff.isoformat()})")
+            print(f"[CLEANUP] Expired {len(stale)} stale listings (older than {cutoff_90.isoformat()})")
         else:
             print("[CLEANUP] No stale listings to expire")
+
+        cutoff_180 = date.today() - timedelta(days=180)
+        purged_archive = db.query(models.ArchivedJobLink).filter(
+            models.ArchivedJobLink.posted_date != None,
+            models.ArchivedJobLink.posted_date < cutoff_180,
+        ).delete(synchronize_session="fetch")
+        purged_jobs = db.query(models.Job).filter(
+            models.Job.posted_date != None,
+            models.Job.posted_date < cutoff_180,
+        ).all()
+        if purged_jobs:
+            purged_job_ids = [j.id for j in purged_jobs]
+            db.query(models.Score).filter(models.Score.job_id.in_(purged_job_ids)).delete(synchronize_session="fetch")
+            db.query(models.Job).filter(models.Job.id.in_(purged_job_ids)).delete(synchronize_session="fetch")
+        db.commit()
+        total_purged = purged_archive + len(purged_jobs)
+        if total_purged:
+            print(f"[Cleanup] Purged {purged_archive} archived URLs and {len(purged_jobs)} stale jobs older than 6 months.")
+        else:
+            print("[Cleanup] No archived URLs or stale jobs older than 6 months to purge.")
     except Exception as e:
         db.rollback()
         print(f"[CLEANUP] Error during post-scrape cleanup: {e}")

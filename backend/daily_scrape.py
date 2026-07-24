@@ -13,7 +13,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database import SessionLocal, engine, post_scrape_cleanup
+from database import SessionLocal, engine, post_scrape_cleanup, load_archived_urls, archive_job_url
 import models
 from scoring_engine import analyze_job
 from scraper import scrape_naukri, scrape_indeed, scrape_linkedin, clean_skills, title_matches_search, normalize_base_role, build_scrape_query
@@ -72,8 +72,11 @@ ALL_ROLES = [
 async def run(roles, max_per_role, platform="all", city="", internships=False):
     total_new = 0
     total_skipped = 0
+    total_archived = 0
     listing_type = "internships" if internships else "jobs"
     run_start = _time.time()
+
+    archived_urls = load_archived_urls()
 
     for i, role in enumerate(roles):
         base_role = normalize_base_role(role)
@@ -97,19 +100,19 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
                 p_lower = platform.lower()
                 if p_lower in ("naukri", "all"):
                     print(f"  [Scraping Naukri] query={search_query}, location={city}")
-                    n_jobs = await scrape_naukri(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls)
+                    n_jobs = await scrape_naukri(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls, archived_urls=archived_urls)
                     jobs.extend(n_jobs)
                     for j in n_jobs:
                         existing_urls.add(j["url"])
                 if p_lower in ("indeed", "all"):
                     print(f"  [Scraping Indeed] query={search_query}, location={city}")
-                    i_jobs = await scrape_indeed(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls)
+                    i_jobs = await scrape_indeed(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls, archived_urls=archived_urls)
                     jobs.extend(i_jobs)
                     for j in i_jobs:
                         existing_urls.add(j["url"])
                 if p_lower in ("linkedin", "all"):
                     print(f"  [Scraping LinkedIn] query={search_query}, location={city}")
-                    li_jobs = await scrape_linkedin(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls, internships=internships)
+                    li_jobs = await scrape_linkedin(search_query, location=city, max_jobs=max_per_role, existing_urls=existing_urls, internships=internships, archived_urls=archived_urls)
                     jobs.extend(li_jobs)
                     for j in li_jobs:
                         existing_urls.add(j["url"])
@@ -119,6 +122,11 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
             
             role_new = 0
             for jd in jobs:
+                if jd.get("_archived"):
+                    archive_job_url(jd["url"], jd.get("posted_date"))
+                    total_archived += 1
+                    continue
+
                 if not title_matches_search(jd.get("title", ""), search_query):
                     print(f"  [SKIP] Title mismatch: {jd.get('title', '')}")
                     total_skipped += 1
@@ -193,7 +201,7 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
 
     total_min = round((_time.time() - run_start) / 60, 1)
     print(f"\n{'='*60}")
-    print(f"DONE! Added {total_new} new {listing_type}, skipped {total_skipped} mismatches.")
+    print(f"DONE! Added {total_new} new {listing_type}, skipped {total_skipped} mismatches, archived {total_archived} old listings.")
     print(f"Total runtime: {total_min} minutes")
     print(f"{'='*60}")
 
