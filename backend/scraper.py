@@ -885,30 +885,24 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print(f"[Indeed API] No results for role='{search_query}', location='{loc}'.")
         return []
 
-    jobs = []
-    fetched = 0
+    valid_jobs = []
+    batch_urls = set()
+    raw_count = len(jobs_list)
     skipped_dup = 0
     skipped_mismatch = 0
     skipped_invalid = 0
 
     for item in jobs_list:
-        if fetched >= max_jobs:
+        if len(valid_jobs) >= max_jobs:
             break
 
+        # ── Check 3: Required fields validation (run first — cheapest) ──
         if not isinstance(item, dict):
             skipped_invalid += 1
             continue
 
         title = (item.get("title") or "").strip()
         company = (item.get("companyName") or "").strip() or "Unknown"
-
-        raw_loc = item.get("location")
-        if isinstance(raw_loc, dict):
-            item_loc = (raw_loc.get("formattedAddressShort") or f"{raw_loc.get('city', '')}, {raw_loc.get('countryCode', '')}").strip(", ")
-        else:
-            item_loc = str(raw_loc or "").strip()
-
-        description = (item.get("descriptionText") or item.get("descriptionHtml") or "").strip()
 
         job_key = item.get("jobKey") or item.get("id") or ""
         raw_url = (item.get("jobUrl") or item.get("applyUrl") or "").strip()
@@ -922,22 +916,41 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
         if not title or not apply_url:
             skipped_invalid += 1
+            print(f"  [Skip Invalid] Missing title or URL")
             continue
 
+        # ── Check 2: Database & batch deduplication ──
         if "linkedin.com" in apply_url.lower():
             skipped_dup += 1
-            print(f"  [DUP] Skipping LinkedIn URL (handled by LinkedIn scraper): {title}")
+            print(f"  [Skip Duplicate] LinkedIn URL (handled by LinkedIn scraper): {title}")
             continue
 
         if apply_url in existing_urls:
             skipped_dup += 1
-            print(f"  [DUP] Skipping known Indeed URL: {title}")
+            print(f"  [Skip Duplicate] Known Indeed URL in DB: {title}")
             continue
 
+        if apply_url in batch_urls:
+            skipped_dup += 1
+            print(f"  [Skip Duplicate] URL already in current batch: {title}")
+            continue
+
+        # ── Check 1: Title / role relevance match ──
         if not title_matches_search(title, search_query):
             skipped_mismatch += 1
-            print(f"  [SKIP] Title mismatch: {title}")
+            print(f"  [Skip Mismatch] Title does not match '{search_query}': {title}")
             continue
+
+        # ── All checks passed — safe to enrich and count ──
+        batch_urls.add(apply_url)
+
+        raw_loc = item.get("location")
+        if isinstance(raw_loc, dict):
+            item_loc = (raw_loc.get("formattedAddressShort") or f"{raw_loc.get('city', '')}, {raw_loc.get('countryCode', '')}").strip(", ")
+        else:
+            item_loc = str(raw_loc or "").strip()
+
+        description = (item.get("descriptionText") or item.get("descriptionHtml") or "").strip()
 
         email = None
         emails = re.findall(r'[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+', description)
@@ -962,7 +975,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         else:
             salary = raw_salary or "Not disclosed"
 
-        jobs.append({
+        valid_jobs.append({
             "title": title,
             "company": company,
             "url": apply_url,
@@ -977,12 +990,12 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
             "salary": salary,
             "skills": [],
         })
-        fetched += 1
-        print(f"  [SUCCESS] [{fetched}/{max_jobs}] {company} — {title}")
+        print(f"  [SUCCESS] [{len(valid_jobs)}/{max_jobs}] {company} — {title}")
 
     skipped_total = skipped_dup + skipped_mismatch + skipped_invalid
-    print(f"  [Indeed API] Fetched: {fetched}/{max_jobs} | Skipped: {skipped_total} (dup={skipped_dup}, mismatch={skipped_mismatch}, invalid={skipped_invalid}) for '{search_query}'")
-    return jobs
+    print(f"[Indeed API] Total NEW valid jobs retrieved: {len(valid_jobs)} (Filtered out {raw_count - len(valid_jobs)} duplicates/mismatches)")
+    print(f"  Breakdown — dup={skipped_dup}, mismatch={skipped_mismatch}, invalid={skipped_invalid} for '{search_query}'")
+    return valid_jobs
 
 
 # ---------------------------------------------------------------------------

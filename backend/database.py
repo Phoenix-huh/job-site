@@ -27,3 +27,57 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def post_scrape_cleanup():
+    """Post-scrape housekeeping: deduplicate by URL, expire stale listings, release sessions."""
+    from datetime import date, timedelta
+    import models
+
+    db = SessionLocal()
+    try:
+        dupes = (
+            db.query(models.Job.url)
+            .filter(models.Job.url != None, models.Job.url != "")
+            .group_by(models.Job.url)
+            .having(db.func.count(models.Job.url) > 1)
+            .all()
+        )
+        dupe_urls = {row[0] for row in dupes}
+        removed_dupes = 0
+        for url in dupe_urls:
+            rows = (
+                db.query(models.Job)
+                .filter(models.Job.url == url)
+                .order_by(models.Job.id)
+                .all()
+            )
+            keep = rows[0]
+            for row in rows[1:]:
+                db.query(models.Score).filter(models.Score.job_id == row.id).delete(synchronize_session="fetch")
+                db.delete(row)
+                removed_dupes += 1
+        if removed_dupes:
+            db.commit()
+            print(f"[CLEANUP] Removed {removed_dupes} duplicate job rows")
+
+        cutoff = date.today() - timedelta(days=90)
+        stale = db.query(models.Job).filter(
+            models.Job.posted_date != None,
+            models.Job.posted_date < cutoff,
+        ).all()
+        if stale:
+            stale_ids = [j.id for j in stale]
+            db.query(models.Score).filter(models.Score.job_id.in_(stale_ids)).delete(synchronize_session="fetch")
+            db.query(models.Job).filter(models.Job.id.in_(stale_ids)).delete(synchronize_session="fetch")
+            db.commit()
+            print(f"[CLEANUP] Expired {len(stale)} stale listings (older than {cutoff.isoformat()})")
+        else:
+            print("[CLEANUP] No stale listings to expire")
+    except Exception as e:
+        db.rollback()
+        print(f"[CLEANUP] Error during post-scrape cleanup: {e}")
+    finally:
+        db.close()
+        engine.dispose()
+        print("[CLEANUP] Database sessions and connection pool released")

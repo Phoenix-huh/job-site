@@ -9,11 +9,11 @@ import sys
 import os
 import argparse
 import time as _time
-from datetime import date, timedelta
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database import SessionLocal, engine
+from database import SessionLocal, engine, post_scrape_cleanup
 import models
 from scoring_engine import analyze_job
 from scraper import scrape_naukri, scrape_indeed, scrape_linkedin, clean_skills, title_matches_search, normalize_base_role, build_scrape_query
@@ -74,25 +74,6 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
     total_skipped = 0
     listing_type = "internships" if internships else "jobs"
     run_start = _time.time()
-
-    # ── Cleanup: delete jobs older than 90 days ──
-    db = SessionLocal()
-    try:
-        cutoff = date.today() - timedelta(days=90)
-        stale_jobs = db.query(models.Job).filter(models.Job.posted_date != None, models.Job.posted_date < cutoff).all()
-        if stale_jobs:
-            stale_ids = [j.id for j in stale_jobs]
-            db.query(models.Score).filter(models.Score.job_id.in_(stale_ids)).delete(synchronize_session="fetch")
-            db.query(models.Job).filter(models.Job.id.in_(stale_ids)).delete(synchronize_session="fetch")
-            db.commit()
-            print(f"[CLEANUP] Deleted {len(stale_jobs)} {listing_type} older than {cutoff.isoformat()}")
-        else:
-            print(f"[CLEANUP] No {listing_type} older than 90 days found.")
-    except Exception as e:
-        db.rollback()
-        print(f"[CLEANUP] Failed: {e}")
-    finally:
-        db.close()
 
     for i, role in enumerate(roles):
         base_role = normalize_base_role(role)
@@ -207,6 +188,8 @@ async def run(roles, max_per_role, platform="all", city="", internships=False):
             delay = 10
             print(f"  [WAIT] Waiting {delay}s before next role...")
             await asyncio.sleep(delay)
+
+    post_scrape_cleanup()
 
     total_min = round((_time.time() - run_start) / 60, 1)
     print(f"\n{'='*60}")
