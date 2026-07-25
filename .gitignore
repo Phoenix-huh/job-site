@@ -4,7 +4,7 @@ backend/venv/
 
 # Dependencies
 frontend/node_modules/
-backend/__pycache__/
+__pycache__/
 *.pyc
 
 # Next.js build output
@@ -12,7 +12,11 @@ frontend/.next/
 
 # Databases
 sql_app.db
+*.db
 
 # OS files
 .DS_Store
 backend/uvicorn.log
+
+# Vercel
+.vercel
