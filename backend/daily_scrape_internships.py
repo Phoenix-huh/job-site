@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from daily_scrape import ALL_ROLES, run
-from scraper import normalize_base_role
+from utils import normalize_base_role
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import SessionLocal
 import models
-from scraper import parse_relative_date
+from utils import parse_relative_date
 
 # ── Selectors to try on the Naukri job DETAIL page ──────────────────────────
 DATE_SELECTORS_DETAIL = [

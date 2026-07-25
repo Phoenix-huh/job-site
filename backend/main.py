@@ -16,7 +16,7 @@ import models
 import schemas
 from database import engine, get_db
 from notification import manager
-from scraper import normalize_base_role
+from utils import normalize_base_role
 
 # Try to import the injector script for remote execution
 import sys

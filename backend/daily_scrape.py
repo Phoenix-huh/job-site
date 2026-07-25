@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from database import SessionLocal, engine, post_scrape_cleanup, load_archived_urls, archive_job_url
 import models
 from scoring_engine import analyze_job
-from scraper import scrape_naukri, scrape_indeed, scrape_linkedin, clean_skills, title_matches_search, normalize_base_role, build_scrape_query
+from scraper import scrape_naukri, scrape_indeed, scrape_linkedin
+from utils import clean_skills, title_matches_search, normalize_base_role, build_scrape_query
 from sqlalchemy.exc import IntegrityError
 
 models.Base.metadata.create_all(bind=engine)
