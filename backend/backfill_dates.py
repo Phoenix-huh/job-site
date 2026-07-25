@@ -112,10 +112,13 @@ async def backfill(limit: int, force_all: bool, dry_run: bool):
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
-                headless=False,
+                headless=os.getenv("CI", "").lower() == "true" or os.getenv("HEADLESS", "true").lower() == "true",
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
                     "--window-size=1280,800",
                 ]
             )

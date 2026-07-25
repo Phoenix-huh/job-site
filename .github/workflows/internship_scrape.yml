@@ -9,12 +9,6 @@ jobs:
   scrape-internships:
     runs-on: ubuntu-latest
 
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,4 +24,11 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Run Internship Scrape
-        run: python backend/daily_scrape_internships.py --max 20 --platform all
+        env:
+          CI: "true"
+          HEADLESS: "true"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: xvfb-run python backend/daily_scrape_internships.py --max 20 --platform all

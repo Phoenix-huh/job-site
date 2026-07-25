@@ -14,6 +14,17 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from playwright_stealth import Stealth
 
+HEADLESS_MODE = os.getenv("CI", "").lower() == "true" or os.getenv("HEADLESS", "true").lower() == "true"
+
+CHROMIUM_LAUNCH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--window-size=1920,1080",
+]
+
 
 async def get_search_results(page, role, location="", max_jobs=10, max_pages=10, existing_urls=None):
     """Get list of job URLs + basic info from search results pages (supports pagination)."""
@@ -755,14 +766,8 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
     jobs = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-gpu",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-            ]
+            headless=HEADLESS_MODE,
+            args=CHROMIUM_LAUNCH_ARGS,
         )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Safari/537.36",
@@ -1273,14 +1278,8 @@ async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int =
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-gpu",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--window-size=1920,1080",
-            ],
+            headless=HEADLESS_MODE,
+            args=CHROMIUM_LAUNCH_ARGS,
         )
         context = await browser.new_context(
             user_agent=(
