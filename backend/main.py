@@ -31,6 +31,13 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ShieldDB API")
 
+
+@app.get("/api")
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "message": "Job Site API is running"}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
