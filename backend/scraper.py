@@ -370,21 +370,33 @@ CITIES_LIST = [
     "Jodhpur", "Raipur", "Shimla", "Panaji", "Goa", "Pondicherry", "Puducherry"
 ]
 
-def extract_city_name(location_str: str) -> str:
+def extract_city_name(location_str: str, company_name: str = "") -> str:
     if not location_str:
         return "Unknown"
-    
+
+    location_str = location_str.strip()
+    if not location_str or len(location_str) > 50:
+        return "Unknown"
+
+    if re.search(r'https?://|@|www\.', location_str, re.I):
+        return "Unknown"
+
+    if company_name and location_str.strip().lower() == company_name.strip().lower():
+        return "Unknown"
+
+    if re.search(r'\b(inc|llc|corp|ltd|pvt|private|limited|co\b|group|technologies|solutions|services|international)\.?', location_str, re.I):
+        return "Unknown"
+
     loc_lower = location_str.lower()
     if "remote" in loc_lower or "work from home" in loc_lower or "wfh" in loc_lower:
         return "Remote"
-        
+
     for city in CITIES_LIST:
         if city.lower() in loc_lower:
             if city.lower() == "bengaluru":
                 return "Bangalore"
             return city
-            
-    # Clean up
+
     first_segment = re.split(r'[,|/]', location_str)[0].strip()
     return first_segment if first_segment else "Unknown"
 
@@ -795,7 +807,7 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
                     "url": card["url"],
                     "description": "",
                     "email": None,
-                    "location": extract_city_name(card.get("location", "")),
+                    "location": extract_city_name(card.get("location", ""), card.get("company", "")),
                     "country": "India",
                     "platform": "Naukri",
                     "job_type": "Archived",
@@ -820,7 +832,7 @@ async def scrape_naukri(search_query: str, location: str = "", max_jobs: int = 1
             if emails:
                 email = emails[0]
             
-            loc = extract_city_name(card.get("location", ""))
+            loc = extract_city_name(card.get("location", ""), card.get("company", ""))
             job_type = infer_job_type(card["title"], desc)
             workplace = infer_workplace_type(loc, desc)
             
@@ -993,7 +1005,7 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         if emails:
             email = emails[0]
 
-        loc = extract_city_name(item_loc) if item_loc else "Unknown"
+        loc = extract_city_name(item_loc, company) if item_loc else "Unknown"
         job_type = infer_job_type(title, description)
         workplace = infer_workplace_type(loc, description)
 
@@ -1324,7 +1336,7 @@ async def scrape_linkedin(search_query: str, location: str = "", max_jobs: int =
             if emails:
                 email = emails[0]
 
-            loc = extract_city_name(card.get("location", ""))
+            loc = extract_city_name(card.get("location", ""), card.get("company", ""))
             job_type = infer_job_type(card["title"], desc)
             workplace = infer_workplace_type(loc, desc)
 

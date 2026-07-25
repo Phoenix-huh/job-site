@@ -78,6 +78,15 @@ def post_scrape_cleanup():
 
     db = SessionLocal()
     try:
+        contaminated = db.query(models.Job).filter(
+            db.func.lower(db.func.trim(models.Job.location)) == db.func.lower(db.func.trim(models.Job.company))
+        ).all()
+        if contaminated:
+            for job in contaminated:
+                job.location = "Unknown"
+            db.commit()
+            print(f"[CLEANUP] Fixed {len(contaminated)} jobs where location matched company name")
+
         dupes = (
             db.query(models.Job.url)
             .filter(models.Job.url != None, models.Job.url != "")

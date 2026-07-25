@@ -102,6 +102,10 @@ def get_locations(db: Session = Depends(get_db)):
     """Get all unique, clean city names from the database."""
     import re
     raw_locs = db.query(models.Job.location).distinct().all()
+    company_names = set(c.strip().lower() for (c,) in db.query(models.Job.company).distinct().all() if c)
+
+    COMPANY_SUFFIXES = re.compile(r'\b(inc|llc|corp|ltd|pvt|private|limited|co\b|group|technologies|solutions|services|international)\.?', re.I)
+    INVALID_CHARS = re.compile(r'https?://|@|www\.', re.I)
 
     CITIES_LIST = [
         "Mumbai", "Bangalore", "Bengaluru", "Delhi", "Hyderabad", "Ahmedabad", "Chennai", "Kolkata", "Pune",
@@ -115,6 +119,15 @@ def get_locations(db: Session = Depends(get_db)):
     def extract_city(raw: str) -> str:
         if not raw:
             return None
+        raw = raw.strip()
+        if not raw or len(raw) > 50:
+            return None
+        if INVALID_CHARS.search(raw):
+            return None
+        if raw.strip().lower() in company_names:
+            return None
+        if COMPANY_SUFFIXES.search(raw):
+            return None
         loc_lower = raw.lower()
         if "remote" in loc_lower or "work from home" in loc_lower or "wfh" in loc_lower:
             return "Remote"
@@ -122,8 +135,7 @@ def get_locations(db: Session = Depends(get_db)):
             if city.lower() in loc_lower:
                 return "Bangalore" if city.lower() == "bengaluru" else city
         first_segment = re.split(r'[,|/]', raw)[0].strip()
-        # If first_segment is suspiciously long (likely has company embedded), skip it
-        if first_segment and len(first_segment) <= 40:
+        if first_segment and len(first_segment) <= 40 and first_segment.lower() not in company_names:
             return first_segment
         return None
 
