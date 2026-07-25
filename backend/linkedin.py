@@ -1,7 +1,17 @@
 from urllib.parse import quote_plus
-from playwright.async_api import Browser
+
+try:
+    from playwright.async_api import Browser
+except ImportError:
+    Browser = None
+
 from models import Job, SearchFilters
-from scrapers.base import BaseScraper, retry
+
+try:
+    from scrapers.base import BaseScraper, retry
+except ImportError:
+    BaseScraper = object
+    retry = None
 
 _EXP_MAP = {"Fresher": "1", "Junior": "2", "Mid": "3", "Senior": "4", "Lead": "5"}
 _TYPE_MAP = {"Full-time": "F", "Part-time": "P", "Contract": "C", "Internship": "I"}
