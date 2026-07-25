@@ -2,7 +2,8 @@ import sys
 import os
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+# Go up two levels: frontend/api -> frontend -> project_root
+root_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
 backend_dir = os.path.join(root_dir, "backend")
 
 for path in [root_dir, backend_dir]:
