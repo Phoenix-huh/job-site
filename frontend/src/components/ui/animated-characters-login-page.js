@@ -15,46 +15,27 @@ const Pupil = ({
   forceLookX,
   forceLookY
 }) => {
-  const [mouseX, setMouseX] = useState(0);
-  const [mouseY, setMouseY] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const pupilRef = useRef(null);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
-      setMouseX(e.clientX);
-      setMouseY(e.clientY);
+      if (!pupilRef.current) return;
+      const pupil = pupilRef.current.getBoundingClientRect();
+      const pupilCenterX = pupil.left + pupil.width / 2;
+      const pupilCenterY = pupil.top + pupil.height / 2;
+      const deltaX = e.clientX - pupilCenterX;
+      const deltaY = e.clientY - pupilCenterY;
+      const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
+      const angle = Math.atan2(deltaY, deltaX);
+      setOffset({ x: Math.cos(angle) * distance, y: Math.sin(angle) * distance });
     };
-
     window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [maxDistance]);
 
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-    };
-  }, []);
-
-  const calculatePupilPosition = () => {
-    if (!pupilRef.current) return { x: 0, y: 0 };
-
-    if (forceLookX !== undefined && forceLookY !== undefined) {
-      return { x: forceLookX, y: forceLookY };
-    }
-
-    const pupil = pupilRef.current.getBoundingClientRect();
-    const pupilCenterX = pupil.left + pupil.width / 2;
-    const pupilCenterY = pupil.top + pupil.height / 2;
-
-    const deltaX = mouseX - pupilCenterX;
-    const deltaY = mouseY - pupilCenterY;
-    const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
-
-    const angle = Math.atan2(deltaY, deltaX);
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-
-    return { x, y };
-  };
-
-  const pupilPosition = calculatePupilPosition();
+  const px = forceLookX !== undefined ? forceLookX : offset.x;
+  const py = forceLookY !== undefined ? forceLookY : offset.y;
 
   return (
     <div
@@ -64,7 +45,7 @@ const Pupil = ({
         width: `${size}px`,
         height: `${size}px`,
         backgroundColor: pupilColor,
-        transform: `translate(${pupilPosition.x}px, ${pupilPosition.y}px)`,
+        transform: `translate(${px}px, ${py}px)`,
         transition: 'transform 0.1s ease-out',
       }}
     />
@@ -81,46 +62,27 @@ const EyeBall = ({
   forceLookX,
   forceLookY
 }) => {
-  const [mouseX, setMouseX] = useState(0);
-  const [mouseY, setMouseY] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const eyeRef = useRef(null);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
-      setMouseX(e.clientX);
-      setMouseY(e.clientY);
+      if (!eyeRef.current) return;
+      const eye = eyeRef.current.getBoundingClientRect();
+      const eyeCenterX = eye.left + eye.width / 2;
+      const eyeCenterY = eye.top + eye.height / 2;
+      const deltaX = e.clientX - eyeCenterX;
+      const deltaY = e.clientY - eyeCenterY;
+      const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
+      const angle = Math.atan2(deltaY, deltaX);
+      setOffset({ x: Math.cos(angle) * distance, y: Math.sin(angle) * distance });
     };
-
     window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [maxDistance]);
 
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-    };
-  }, []);
-
-  const calculatePupilPosition = () => {
-    if (!eyeRef.current) return { x: 0, y: 0 };
-
-    if (forceLookX !== undefined && forceLookY !== undefined) {
-      return { x: forceLookX, y: forceLookY };
-    }
-
-    const eye = eyeRef.current.getBoundingClientRect();
-    const eyeCenterX = eye.left + eye.width / 2;
-    const eyeCenterY = eye.top + eye.height / 2;
-
-    const deltaX = mouseX - eyeCenterX;
-    const deltaY = mouseY - eyeCenterY;
-    const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
-
-    const angle = Math.atan2(deltaY, deltaX);
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-
-    return { x, y };
-  };
-
-  const pupilPosition = calculatePupilPosition();
+  const px = forceLookX !== undefined ? forceLookX : offset.x;
+  const py = forceLookY !== undefined ? forceLookY : offset.y;
 
   return (
     <div
@@ -140,7 +102,7 @@ const EyeBall = ({
             width: `${pupilSize}px`,
             height: `${pupilSize}px`,
             backgroundColor: pupilColor,
-            transform: `translate(${pupilPosition.x}px, ${pupilPosition.y}px)`,
+            transform: `translate(${px}px, ${py}px)`,
             transition: 'transform 0.1s ease-out',
           }}
         />
@@ -217,14 +179,12 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isTyping) {
-      setIsLookingAtEachOther(true);
-      const timer = setTimeout(() => {
-        setIsLookingAtEachOther(false);
-      }, 800);
-      return () => clearTimeout(timer);
-    } else {
-      setIsLookingAtEachOther(false);
+      const timer = setTimeout(() => setIsLookingAtEachOther(true), 0);
+      const resetTimer = setTimeout(() => setIsLookingAtEachOther(false), 800);
+      return () => { clearTimeout(timer); clearTimeout(resetTimer); };
     }
+    const resetTimer = setTimeout(() => setIsLookingAtEachOther(false), 0);
+    return () => clearTimeout(resetTimer);
   }, [isTyping]);
 
   useEffect(() => {
@@ -241,33 +201,39 @@ export default function LoginPage() {
 
       const firstPeek = schedulePeek();
       return () => clearTimeout(firstPeek);
-    } else {
-      setIsPurplePeeking(false);
     }
+    const resetTimer = setTimeout(() => setIsPurplePeeking(false), 0);
+    return () => clearTimeout(resetTimer);
   }, [password, showPassword, isPurplePeeking]);
 
-  const calculatePosition = (ref) => {
-    if (!ref.current) return { faceX: 0, faceY: 0, bodyRotation: 0 };
+  const [charPositions, setCharPositions] = useState({ purple: { faceX: 0, faceY: 0, bodySkew: 0 }, black: { faceX: 0, faceY: 0, bodySkew: 0 }, yellow: { faceX: 0, faceY: 0, bodySkew: 0 }, orange: { faceX: 0, faceY: 0, bodySkew: 0 } });
 
-    const rect = ref.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 3;
+  useEffect(() => {
+    const calc = (ref) => {
+      if (!ref.current) return { faceX: 0, faceY: 0, bodySkew: 0 };
+      const rect = ref.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 3;
+      const deltaX = mouseX - centerX;
+      const deltaY = mouseY - centerY;
+      return {
+        faceX: Math.max(-15, Math.min(15, deltaX / 20)),
+        faceY: Math.max(-10, Math.min(10, deltaY / 30)),
+        bodySkew: Math.max(-6, Math.min(6, -deltaX / 120)),
+      };
+    };
+    setCharPositions({
+      purple: calc(purpleRef),
+      black: calc(blackRef),
+      yellow: calc(yellowRef),
+      orange: calc(orangeRef),
+    });
+  }, [mouseX, mouseY]);
 
-    const deltaX = mouseX - centerX;
-    const deltaY = mouseY - centerY;
-
-    const faceX = Math.max(-15, Math.min(15, deltaX / 20));
-    const faceY = Math.max(-10, Math.min(10, deltaY / 30));
-
-    const bodySkew = Math.max(-6, Math.min(6, -deltaX / 120));
-
-    return { faceX, faceY, bodySkew };
-  };
-
-  const purplePos = calculatePosition(purpleRef);
-  const blackPos = calculatePosition(blackRef);
-  const yellowPos = calculatePosition(yellowRef);
-  const orangePos = calculatePosition(orangeRef);
+  const purplePos = charPositions.purple;
+  const blackPos = charPositions.black;
+  const yellowPos = charPositions.yellow;
+  const orangePos = charPositions.orange;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -558,7 +524,7 @@ export default function LoginPage() {
             </form>
 
             <div className="text-center text-[13px] text-neutral-500 mt-6">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <a href="/register" className="text-zinc-900 font-bold hover:underline">
                 Sign Up
               </a>

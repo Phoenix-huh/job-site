@@ -1,9 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wehftvlajfmvbbmwtmzj.supabase.co";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_RbxTly3tZNRKfcFl8AOGLA_YT1xCWeK";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-const isConfigured = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 40 && !SUPABASE_ANON_KEY.includes("placeholder");
+const isConfigured = SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 40 && !SUPABASE_ANON_KEY.includes("placeholder");
 
 const stubAuth = {
   getSession: async () => ({ data: { session: null } }),

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || "";
 
 function dedupeJobs(list) {
   const seen = new Set();
@@ -170,9 +170,9 @@ export default function Home() {
   const PAGE_SIZE = 100;
 
   useEffect(() => {
-    fetch(`${API}/api/roles`).then(r => r.json()).then(setRoles).catch(() => { });
-    fetch(`${API}/api/locations`).then(r => r.json()).then(setLocations).catch(() => { });
-    fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => { });
+    fetch(`${API}/api/roles`).then(r => r.json()).then(d => setRoles(Array.isArray(d) ? d : [])).catch(() => { });
+    fetch(`${API}/api/locations`).then(r => r.json()).then(d => setLocations(Array.isArray(d) ? d : [])).catch(() => { });
+    fetch(`${API}/api/stats`).then(r => r.json()).then(d => setStats(d && typeof d === "object" ? d : { total: 0, safe: 0, caution: 0, risky: 0 })).catch(() => { });
     fetch(`${API}/api/jobs?limit=10000`).then(r => r.json()).then((data) => setAllJobs(dedupeJobs(Array.isArray(data) ? data : []))).catch(() => { });
   }, []);
 
@@ -180,7 +180,7 @@ export default function Home() {
   useEffect(() => {
     if (viewMode === 'insights') {
       fetch(`${API}/api/jobs?limit=10000`).then(r => r.json()).then((data) => setAllJobs(dedupeJobs(Array.isArray(data) ? data : []))).catch(() => { });
-      fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => { });
+      fetch(`${API}/api/stats`).then(r => r.json()).then(d => setStats(d && typeof d === "object" ? d : { total: 0, safe: 0, caution: 0, risky: 0 })).catch(() => { });
     }
     if (viewMode === 'dashboard' && !user) setViewMode('threat');
     if (viewMode === 'help' && !user) setViewMode('threat');
@@ -191,38 +191,28 @@ export default function Home() {
     if (!user) { setInteractions({}); return; }
     console.log("[ShieldDB] Fetching interactions for user:", user.id);
     fetch(`${API}/api/interactions?user_id=${encodeURIComponent(user.id)}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+      .then(r => r.ok ? r.json() : [])
       .then((data) => {
-        console.log("[ShieldDB] Interactions loaded:", Array.isArray(data) ? data.length : 0, "records");
+        const list = Array.isArray(data) ? data : [];
+        console.log("[ShieldDB] Interactions loaded:", list.length, "records");
         const map = {};
-        (Array.isArray(data) ? data : []).forEach(i => { map[i.job_id] = i; });
+        list.forEach(i => { map[i.job_id] = i; });
         setInteractions(map);
       })
-      .catch((e) => {
-        console.error("[ShieldDB] Failed to fetch interactions:", e);
-      });
+      .catch(() => { });
   }, [user]);
 
   useEffect(() => {
     if (!user || viewMode !== 'dashboard') return;
     console.log("[ShieldDB] Fetching applied jobs for dashboard, user_id:", user.id);
     fetch(`${API}/api/interactions/applied?user_id=${encodeURIComponent(user.id)}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+      .then(r => r.ok ? r.json() : [])
       .then((data) => {
         const jobs = Array.isArray(data) ? data : [];
         console.log("[ShieldDB] Dashboard: loaded", jobs.length, "applied jobs");
         setDashAppliedJobs(jobs);
       })
-      .catch((e) => {
-        console.error("[ShieldDB] Failed to fetch applied jobs:", e);
-        setDashAppliedJobs([]);
-      });
+      .catch(() => setDashAppliedJobs([]));
   }, [user, viewMode, interactions]);
 
   const dashJobs = dashAppliedJobs.filter(job => {

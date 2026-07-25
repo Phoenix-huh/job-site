@@ -7,7 +7,9 @@ export function NotificationToast() {
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    const eventSource = new EventSource("http://localhost:8000/api/notifications/stream");
+    const sseBase = process.env.NEXT_PUBLIC_API_URL || "";
+    const sseUrl = sseBase ? `${sseBase}/api/notifications/stream` : "http://localhost:8000/api/notifications/stream";
+    const eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);

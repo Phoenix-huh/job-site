@@ -9,64 +9,58 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, EyeOff, Sparkles } from "lucide-react";
 
 const Pupil = ({ size = 12, maxDistance = 5, pupilColor = "black", forceLookX, forceLookY }) => {
-  const [mouseX, setMouseX] = useState(0);
-  const [mouseY, setMouseY] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const pupilRef = useRef(null);
 
   useEffect(() => {
-    const handleMouseMove = (e) => { setMouseX(e.clientX); setMouseY(e.clientY); };
+    const handleMouseMove = (e) => {
+      if (!pupilRef.current) return;
+      const pupil = pupilRef.current.getBoundingClientRect();
+      const pupilCenterX = pupil.left + pupil.width / 2;
+      const pupilCenterY = pupil.top + pupil.height / 2;
+      const deltaX = e.clientX - pupilCenterX;
+      const deltaY = e.clientY - pupilCenterY;
+      const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
+      const angle = Math.atan2(deltaY, deltaX);
+      setOffset({ x: Math.cos(angle) * distance, y: Math.sin(angle) * distance });
+    };
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+  }, [maxDistance]);
 
-  const calculatePupilPosition = () => {
-    if (!pupilRef.current) return { x: 0, y: 0 };
-    if (forceLookX !== undefined && forceLookY !== undefined) return { x: forceLookX, y: forceLookY };
-    const pupil = pupilRef.current.getBoundingClientRect();
-    const pupilCenterX = pupil.left + pupil.width / 2;
-    const pupilCenterY = pupil.top + pupil.height / 2;
-    const deltaX = mouseX - pupilCenterX;
-    const deltaY = mouseY - pupilCenterY;
-    const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
-    const angle = Math.atan2(deltaY, deltaX);
-    return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance };
-  };
-
-  const pupilPosition = calculatePupilPosition();
+  const px = forceLookX !== undefined ? forceLookX : offset.x;
+  const py = forceLookY !== undefined ? forceLookY : offset.y;
 
   return (
     <div ref={pupilRef} className="rounded-full" style={{
       width: `${size}px`, height: `${size}px`, backgroundColor: pupilColor,
-      transform: `translate(${pupilPosition.x}px, ${pupilPosition.y}px)`, transition: 'transform 0.1s ease-out',
+      transform: `translate(${px}px, ${py}px)`, transition: 'transform 0.1s ease-out',
     }} />
   );
 };
 
 const EyeBall = ({ size = 48, pupilSize = 16, maxDistance = 10, eyeColor = "white", pupilColor = "black", isBlinking = false, forceLookX, forceLookY }) => {
-  const [mouseX, setMouseX] = useState(0);
-  const [mouseY, setMouseY] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const eyeRef = useRef(null);
 
   useEffect(() => {
-    const handleMouseMove = (e) => { setMouseX(e.clientX); setMouseY(e.clientY); };
+    const handleMouseMove = (e) => {
+      if (!eyeRef.current) return;
+      const eye = eyeRef.current.getBoundingClientRect();
+      const eyeCenterX = eye.left + eye.width / 2;
+      const eyeCenterY = eye.top + eye.height / 2;
+      const deltaX = e.clientX - eyeCenterX;
+      const deltaY = e.clientY - eyeCenterY;
+      const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
+      const angle = Math.atan2(deltaY, deltaX);
+      setOffset({ x: Math.cos(angle) * distance, y: Math.sin(angle) * distance });
+    };
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+  }, [maxDistance]);
 
-  const calculatePupilPosition = () => {
-    if (!eyeRef.current) return { x: 0, y: 0 };
-    if (forceLookX !== undefined && forceLookY !== undefined) return { x: forceLookX, y: forceLookY };
-    const eye = eyeRef.current.getBoundingClientRect();
-    const eyeCenterX = eye.left + eye.width / 2;
-    const eyeCenterY = eye.top + eye.height / 2;
-    const deltaX = mouseX - eyeCenterX;
-    const deltaY = mouseY - eyeCenterY;
-    const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
-    const angle = Math.atan2(deltaY, deltaX);
-    return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance };
-  };
-
-  const pupilPosition = calculatePupilPosition();
+  const px = forceLookX !== undefined ? forceLookX : offset.x;
+  const py = forceLookY !== undefined ? forceLookY : offset.y;
 
   return (
     <div ref={eyeRef} className="rounded-full flex items-center justify-center transition-all duration-150" style={{
@@ -75,7 +69,7 @@ const EyeBall = ({ size = 48, pupilSize = 16, maxDistance = 10, eyeColor = "whit
       {!isBlinking && (
         <div className="rounded-full" style={{
           width: `${pupilSize}px`, height: `${pupilSize}px`, backgroundColor: pupilColor,
-          transform: `translate(${pupilPosition.x}px, ${pupilPosition.y}px)`, transition: 'transform 0.1s ease-out',
+          transform: `translate(${px}px, ${py}px)`, transition: 'transform 0.1s ease-out',
         }} />
       )}
     </div>
@@ -134,12 +128,12 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isTyping) {
-      setIsLookingAtEachOther(true);
-      const timer = setTimeout(() => setIsLookingAtEachOther(false), 800);
-      return () => clearTimeout(timer);
-    } else {
-      setIsLookingAtEachOther(false);
+      const timer = setTimeout(() => setIsLookingAtEachOther(true), 0);
+      const resetTimer = setTimeout(() => setIsLookingAtEachOther(false), 800);
+      return () => { clearTimeout(timer); clearTimeout(resetTimer); };
     }
+    const resetTimer = setTimeout(() => setIsLookingAtEachOther(false), 0);
+    return () => clearTimeout(resetTimer);
   }, [isTyping]);
 
   useEffect(() => {
@@ -153,28 +147,39 @@ export default function LoginPage() {
       };
       const firstPeek = schedulePeek();
       return () => clearTimeout(firstPeek);
-    } else {
-      setIsPurplePeeking(false);
     }
+    const resetTimer = setTimeout(() => setIsPurplePeeking(false), 0);
+    return () => clearTimeout(resetTimer);
   }, [password, showPassword, isPurplePeeking]);
 
-  const calculatePosition = (ref) => {
-    if (!ref.current) return { faceX: 0, faceY: 0, bodySkew: 0 };
-    const rect = ref.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 3;
-    const deltaX = mouseX - centerX;
-    const deltaY = mouseY - centerY;
-    const faceX = Math.max(-15, Math.min(15, deltaX / 20));
-    const faceY = Math.max(-10, Math.min(10, deltaY / 30));
-    const bodySkew = Math.max(-6, Math.min(6, -deltaX / 120));
-    return { faceX, faceY, bodySkew };
-  };
+  const [charPositions, setCharPositions] = useState({ purple: { faceX: 0, faceY: 0, bodySkew: 0 }, black: { faceX: 0, faceY: 0, bodySkew: 0 }, yellow: { faceX: 0, faceY: 0, bodySkew: 0 }, orange: { faceX: 0, faceY: 0, bodySkew: 0 } });
 
-  const purplePos = calculatePosition(purpleRef);
-  const blackPos = calculatePosition(blackRef);
-  const yellowPos = calculatePosition(yellowRef);
-  const orangePos = calculatePosition(orangeRef);
+  useEffect(() => {
+    const calc = (ref) => {
+      if (!ref.current) return { faceX: 0, faceY: 0, bodySkew: 0 };
+      const rect = ref.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 3;
+      const deltaX = mouseX - centerX;
+      const deltaY = mouseY - centerY;
+      return {
+        faceX: Math.max(-15, Math.min(15, deltaX / 20)),
+        faceY: Math.max(-10, Math.min(10, deltaY / 30)),
+        bodySkew: Math.max(-6, Math.min(6, -deltaX / 120)),
+      };
+    };
+    setCharPositions({
+      purple: calc(purpleRef),
+      black: calc(blackRef),
+      yellow: calc(yellowRef),
+      orange: calc(orangeRef),
+    });
+  }, [mouseX, mouseY]);
+
+  const purplePos = charPositions.purple;
+  const blackPos = charPositions.black;
+  const yellowPos = charPositions.yellow;
+  const orangePos = charPositions.orange;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
