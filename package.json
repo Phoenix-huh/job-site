@@ -2,6 +2,10 @@
   "name": "job-site-monorepo",
   "version": "1.0.0",
   "scripts": {
-    "build": "npm --prefix frontend install && npm --prefix frontend run build"
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "dev": "npm --prefix frontend run dev -- -p 3001"
+  },
+  "devDependencies": {
+    "next": "16.2.3"
   }
 }
