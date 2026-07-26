@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node -e \"const fs=require('fs');const p=require('path');const src=p.resolve(__dirname,'..','backend');const dst=p.resolve(__dirname,'backend');if(!fs.existsSync(dst)){fs.cpSync(src,dst,{recursive:true})}\" && next build",
+    "build": "node copy-backend.mjs && next build",
     "start": "next start",
     "lint": "eslint"
   },
