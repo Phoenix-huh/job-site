@@ -149,6 +149,7 @@ export default function Home() {
   const [allJobs, setAllJobs] = useState([]);
   const [insightsRole, setInsightsRole] = useState("");
   const [insightsCity, setInsightsCity] = useState("");
+  const [insightsSearch, setInsightsSearch] = useState("");
   const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'internships'
   const [searchQuery, setSearchQuery] = useState('');
   const [interactions, setInteractions] = useState({});
@@ -482,7 +483,9 @@ export default function Home() {
   const filteredInsightsJobs = allJobs.filter(job => {
     const roleMatch = !insightsRole || normalizeBaseRole(job.role) === insightsRole;
     const cityMatch = !insightsCity || (job.location && job.location.toLowerCase().includes(insightsCity.toLowerCase()));
-    return roleMatch && cityMatch;
+    const q = insightsSearch.toLowerCase();
+    const searchMatch = !q || job.title.toLowerCase().includes(q) || job.company.toLowerCase().includes(q) || (job.location && job.location.toLowerCase().includes(q));
+    return roleMatch && cityMatch && searchMatch;
   });
 
   // Calculate Median & Top Salaries by Role
@@ -1158,6 +1161,13 @@ export default function Home() {
                   <div className="slicer-chevron">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
                   </div>
+                </div>
+              </div>
+              <div className="slicer-field">
+                <span className="slicer-label">Search</span>
+                <div className="search-wrap" style={{ maxWidth: '100%' }}>
+                  <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input type="text" className="search-input" placeholder="Search jobs, companies, locations..." value={insightsSearch} onChange={(e) => setInsightsSearch(e.target.value)} />
                 </div>
               </div>
             </div>
