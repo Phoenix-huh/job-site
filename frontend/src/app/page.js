@@ -3,7 +3,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "";
+const _rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+const API = _rawApiUrl.replace(/\/api\/?$/, "");
 
 function dedupeJobs(list) {
   const seen = new Set();
