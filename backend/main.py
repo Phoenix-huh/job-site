@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, Request
+﻿from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -18,6 +18,7 @@ from database import engine, get_db
 from notification import manager
 from utils import normalize_base_role
 
+# Try to import the injector script for remote execution
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,7 +30,13 @@ except ImportError:
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ShieldDB API")
-router = APIRouter(prefix="/api")
+
+
+@app.get("/api")
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "message": "Job Site API is running"}
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,17 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@router.get("")
-@router.get("/health")
-@app.get("/api")
-@app.get("/api/health")
-def health():
-    return {"status": "ok", "message": "Job Site API is running"}
-
-
-@router.get("/jobs", response_model=List[schemas.JobOut])
-@app.get("/jobs", response_model=List[schemas.JobOut])
+@app.get("/api/jobs", response_model=List[schemas.JobOut])
 def get_jobs(
     role: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
@@ -85,6 +82,7 @@ def get_jobs(
         query = query.filter(models.Job.job_type != exclude_job_type)
 
     if use_recency_sort:
+        # Newest posted first; tie-break on scrape time then id
         query = query.order_by(
             case((models.Job.posted_date == None, 1), else_=0),
             desc(models.Job.posted_date),
@@ -99,16 +97,14 @@ def get_jobs(
     jobs = query.offset(offset).limit(limit).all()
     return jobs
 
-@router.get("/roles")
-@app.get("/roles")
+@app.get("/api/roles")
 def get_roles(db: Session = Depends(get_db)):
     """Get base role names (intern/trainee suffixes merged into parent role)."""
     roles = db.query(models.Job.role).distinct().all()
     bases = {normalize_base_role(r[0]) for r in roles if r[0]}
     return sorted(bases)
 
-@router.get("/locations")
-@app.get("/locations")
+@app.get("/api/locations")
 def get_locations(db: Session = Depends(get_db)):
     """Get all unique, clean city names from the database."""
     import re
@@ -159,8 +155,7 @@ def get_locations(db: Session = Depends(get_db)):
             result.append(city)
     return sorted(result)
 
-@router.get("/stats")
-@app.get("/stats")
+@app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):
     """Quick stats for the dashboard."""
     total = db.query(models.Job).count()
@@ -169,18 +164,17 @@ def get_stats(db: Session = Depends(get_db)):
     risky = db.query(models.Job).join(models.Score).filter(models.Score.final_score >= 61).count()
     return {"total": total, "safe": safe, "caution": caution, "risky": risky}
 
-@router.get("/seed")
-@app.get("/seed")
+@app.get("/api/seed")
 def seed_database():
     """Trigger the real-data injection script remotely."""
     if inject:
+        # Run the injection synchronously
         inject()
         return {"status": "success", "message": "Database seeded successfully with 3 real-world jobs."}
     else:
         raise HTTPException(status_code=500, detail="Injection script not found or could not be loaded.")
 
-@router.get("/jobs/{job_id}", response_model=schemas.JobOut)
-@app.get("/jobs/{job_id}", response_model=schemas.JobOut)
+@app.get("/api/jobs/{job_id}", response_model=schemas.JobOut)
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(models.Job).filter(models.Job.id == job_id).first()
     if not job:
@@ -190,21 +184,23 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 # --- Global Exception Handler (Error Handling) ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Let HTTPExceptions pass through with their proper status codes
     if isinstance(exc, HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail}
         )
+    # Log the actual error for debugging
     import traceback
     traceback.print_exc()
+    # Only catch truly unexpected errors
     return JSONResponse(
         status_code=500,
         content={"detail": "An unexpected error occurred. Please try again later.", "type": str(type(exc).__name__)}
     )
 
 # --- Authentication & Authorization ---
-@router.post("/auth/register")
-@app.post("/auth/register")
+@app.post("/api/auth/register")
 def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     try:
         db_user = db.query(models.User).filter(models.User.email == user_in.email).first()
@@ -212,6 +208,7 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Email already registered")
         
         hashed_password = auth.get_password_hash(user_in.password)
+        # the first user created is admin, others aren't by default (just for demo purposes)
         is_admin = db.query(models.User).count() == 0 
         
         user = models.User(
@@ -231,8 +228,7 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise
 
-@router.post("/auth/token", response_model=schemas.Token)
-@app.post("/auth/token", response_model=schemas.Token)
+@app.post("/api/auth/token", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
@@ -242,16 +238,15 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     return {"access_token": access_token, "token_type": "bearer"}
 
 # --- Notifications (SSE) ---
-@router.get("/notifications/stream")
-@app.get("/notifications/stream")
+@app.get("/api/notifications/stream")
 async def notification_stream():
     """Subscribe to events (e.g. new jobs added) via Server-Sent Events."""
     return EventSourceResponse(manager.get_generator())
 
-@router.post("/notifications/publish", status_code=202)
-@app.post("/notifications/publish", status_code=202)
+@app.post("/api/notifications/publish", status_code=202)
 def publish_notification(payload: dict, db: Session = Depends(get_db)):
     """Internal endpoint to publish events from scripts."""
+    # Could protect this with an internal api key instead
     manager.publish(payload)
     return {"status": "published"}
 
@@ -292,8 +287,7 @@ def _send_help_email(user_email: str, message: str) -> bool:
         print(f"[HELP] Failed to send email: {e}")
         return False
 
-@router.post("/help")
-@app.post("/help")
+@app.post("/api/help")
 def submit_help_request(payload: schemas.HelpRequest):
     if not payload.user_email or not payload.user_email.strip():
         raise HTTPException(status_code=422, detail="user_email is required")
@@ -307,8 +301,7 @@ def submit_help_request(payload: schemas.HelpRequest):
         return {"status": "logged", "detail": "Your message has been received. We will get back to you shortly."}
 
 # --- RESTful endpoints for Jobs (Admin Only) ---
-@router.post("/jobs", response_model=schemas.JobOut, status_code=201)
-@app.post("/jobs", response_model=schemas.JobOut, status_code=201)
+@app.post("/api/jobs", response_model=schemas.JobOut, status_code=201)
 def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
     """REST: Create a new job manually (admin only)."""
     db_job = models.Job(**job.model_dump())
@@ -316,12 +309,12 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), current_us
     db.commit()
     db.refresh(db_job)
     
+    # Notify connected clients
     manager.publish({"event": "new_job", "job_id": db_job.id, "title": db_job.title})
     
     return db_job
 
-@router.put("/jobs/{job_id}", response_model=schemas.JobOut)
-@app.put("/jobs/{job_id}", response_model=schemas.JobOut)
+@app.put("/api/jobs/{job_id}", response_model=schemas.JobOut)
 def update_job(job_id: int, job_update: schemas.JobCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
     """REST: Update a job manually (admin only)."""
     db_job = db.query(models.Job).filter(models.Job.id == job_id).first()
@@ -335,14 +328,14 @@ def update_job(job_id: int, job_update: schemas.JobCreate, db: Session = Depends
     db.refresh(db_job)
     return db_job
 
-@router.delete("/jobs/{job_id}", status_code=204)
-@app.delete("/jobs/{job_id}", status_code=204)
+@app.delete("/api/jobs/{job_id}", status_code=204)
 def delete_job(job_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
     """REST: Delete a job manually (admin only)."""
     db_job = db.query(models.Job).filter(models.Job.id == job_id).first()
     if not db_job:
         raise HTTPException(status_code=404, detail="Job not found")
         
+    # Also delete the score if present
     if db_job.score:
         db.delete(db_job.score)
         
@@ -352,14 +345,12 @@ def delete_job(job_id: int, db: Session = Depends(get_db), current_user: models.
 
 # --- User-Job Interactions (Authenticated via Supabase) ---
 
-@router.get("/interactions", response_model=List[schemas.UserJobInteractionOut])
-@app.get("/interactions", response_model=List[schemas.UserJobInteractionOut])
+@app.get("/api/interactions", response_model=List[schemas.UserJobInteractionOut])
 def get_interactions(user_id: str = Query(...), db: Session = Depends(get_db)):
     rows = db.query(models.UserJobInteraction).filter(models.UserJobInteraction.user_id == user_id).all()
     return rows
 
-@router.get("/interactions/applied", response_model=List[schemas.JobOut])
-@app.get("/interactions/applied", response_model=List[schemas.JobOut])
+@app.get("/api/interactions/applied", response_model=List[schemas.JobOut])
 def get_applied_jobs(user_id: str = Query(...), db: Session = Depends(get_db)):
     interactions = db.query(models.UserJobInteraction).filter(
         models.UserJobInteraction.user_id == user_id,
@@ -370,8 +361,7 @@ def get_applied_jobs(user_id: str = Query(...), db: Session = Depends(get_db)):
         return []
     return db.query(models.Job).options(joinedload(models.Job.score)).filter(models.Job.id.in_(job_ids)).all()
 
-@router.post("/interactions", response_model=schemas.UserJobInteractionOut)
-@app.post("/interactions", response_model=schemas.UserJobInteractionOut)
+@app.post("/api/interactions", response_model=schemas.UserJobInteractionOut)
 def upsert_interaction(payload: schemas.UserJobInteractionCreate, user_id: str = Query(...), db: Session = Depends(get_db)):
     existing = db.query(models.UserJobInteraction).filter(
         models.UserJobInteraction.user_id == user_id,
@@ -396,8 +386,7 @@ def upsert_interaction(payload: schemas.UserJobInteractionCreate, user_id: str =
     db.refresh(row)
     return row
 
-@router.delete("/interactions/{interaction_id}", status_code=204)
-@app.delete("/interactions/{interaction_id}", status_code=204)
+@app.delete("/api/interactions/{interaction_id}", status_code=204)
 def delete_interaction(interaction_id: int, user_id: str = Query(...), db: Session = Depends(get_db)):
     row = db.query(models.UserJobInteraction).filter(
         models.UserJobInteraction.id == interaction_id,
@@ -408,5 +397,3 @@ def delete_interaction(interaction_id: int, user_id: str = Query(...), db: Sessi
     db.delete(row)
     db.commit()
     return None
-
-app.include_router(router)
