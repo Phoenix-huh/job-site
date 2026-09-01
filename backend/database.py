@@ -71,6 +71,47 @@ def is_job_too_old(posted_date_str, max_days=90):
         return False
 
 
+def archive_old_jobs(max_days=90):
+    """Archive all jobs older than max_days into archived_job_links, then delete them from jobs table."""
+    from datetime import date, timedelta
+    import models
+
+    db = SessionLocal()
+    try:
+        cutoff = date.today() - timedelta(days=max_days)
+        stale = db.query(models.Job).filter(
+            models.Job.posted_date != None,
+            models.Job.posted_date < cutoff,
+        ).all()
+        if not stale:
+            print(f"[ARCHIVE] No jobs older than {cutoff.isoformat()} found")
+            return 0
+
+        newly_archived = 0
+        for job in stale:
+            if job.url:
+                existing = db.query(models.ArchivedJobLink).filter(models.ArchivedJobLink.url == job.url).first()
+                if not existing:
+                    db.add(models.ArchivedJobLink(url=job.url, posted_date=job.posted_date))
+                    newly_archived += 1
+
+        db.commit()
+
+        stale_ids = [j.id for j in stale]
+        db.query(models.Score).filter(models.Score.job_id.in_(stale_ids)).delete(synchronize_session="fetch")
+        db.query(models.Job).filter(models.Job.id.in_(stale_ids)).delete(synchronize_session="fetch")
+        db.commit()
+
+        print(f"[ARCHIVE] Archived {newly_archived} URLs and deleted {len(stale)} jobs older than {cutoff.isoformat()}")
+        return len(stale)
+    except Exception as e:
+        db.rollback()
+        print(f"[ARCHIVE] Error: {e}")
+        return 0
+    finally:
+        db.close()
+
+
 def post_scrape_cleanup():
     """Post-scrape housekeeping: deduplicate, expire stale listings, 6-month purge, release sessions."""
     from datetime import date, timedelta
@@ -117,6 +158,16 @@ def post_scrape_cleanup():
             models.Job.posted_date < cutoff_90,
         ).all()
         if stale:
+            newly_archived = 0
+            for job in stale:
+                if job.url:
+                    existing = db.query(models.ArchivedJobLink).filter(models.ArchivedJobLink.url == job.url).first()
+                    if not existing:
+                        db.add(models.ArchivedJobLink(url=job.url, posted_date=job.posted_date))
+                        newly_archived += 1
+            if newly_archived:
+                db.commit()
+                print(f"[CLEANUP] Archived {newly_archived} stale job URLs before deletion")
             stale_ids = [j.id for j in stale]
             db.query(models.Score).filter(models.Score.job_id.in_(stale_ids)).delete(synchronize_session="fetch")
             db.query(models.Job).filter(models.Job.id.in_(stale_ids)).delete(synchronize_session="fetch")
@@ -151,3 +202,16 @@ def post_scrape_cleanup():
         db.close()
         engine.dispose()
         print("[CLEANUP] Database sessions and connection pool released")
+
+
+if __name__ == "__main__":
+    import argparse
+    import models
+    models.Base.metadata.create_all(bind=engine)
+
+    parser = argparse.ArgumentParser(description="Archive old jobs from the database")
+    parser.add_argument("--days", type=int, default=90, help="Archive jobs older than N days (default: 90)")
+    args = parser.parse_args()
+
+    count = archive_old_jobs(max_days=args.days)
+    print(f"Done. {count} jobs archived.")
