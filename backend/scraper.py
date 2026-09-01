@@ -389,8 +389,8 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
         print("[Indeed API Error] RAPIDAPI_KEY is empty or missing from environment!")
         return []
 
-    loc = location if location and location.strip() else "USA"
-    country_code = "in" if "india" in loc.lower() else "us"
+    loc = location if location and location.strip() else "India"
+    country_code = "in"
     payload = {
         "scraper": {
             "maxRows": 20,
@@ -463,11 +463,11 @@ async def scrape_indeed(search_query: str, location: str = "", max_jobs: int = 1
 
         job_key = item.get("jobKey") or item.get("id") or ""
         raw_url = (item.get("jobUrl") or item.get("applyUrl") or "").strip()
-        if not raw_url or raw_url.rstrip("/") == "https://www.indeed.com/viewjob":
+        if not raw_url or raw_url.rstrip("/") == "https://www.indeed.co.in/viewjob":
             if job_key:
-                apply_url = f"https://www.indeed.com/viewjob?jk={job_key}"
+                apply_url = f"https://www.indeed.co.in/viewjob?jk={job_key}"
             else:
-                apply_url = raw_url if raw_url else f"https://www.indeed.com/viewjob?ref={hash(company + title)}"
+                apply_url = raw_url if raw_url else f"https://www.indeed.co.in/viewjob?ref={hash(company + title)}"
         else:
             apply_url = raw_url
 
